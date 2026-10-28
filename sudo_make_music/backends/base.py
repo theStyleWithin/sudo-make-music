@@ -54,6 +54,7 @@ class ModelBackend(ABC):
     min_vram_mb: int = 0             # informational, shown in UI
     needs_model: bool = False        # True -> a folder from the ModelStore must be selected
     default_model_name: str = ""      # backends with a downloadable default get an empty folder registered
+    can_switch_device_live: bool = True   # False if CUDA<->CPU only works from a fresh process
     supports_context: bool = False   # can condition on the previous segment's tail
 
     @classmethod

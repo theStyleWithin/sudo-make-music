@@ -154,3 +154,45 @@ def test_offline_mode_requires_local_model(engine):
     assert os.environ["HF_HUB_OFFLINE"] == "1"
     engine._apply_offline(False)
     assert "HF_HUB_OFFLINE" not in os.environ
+
+
+def test_no_gpu_resolves_to_cpu():
+    p = memory.resolve("quality", None, vram_mb=None)
+    assert p.device == "cpu" and p.chunk_seconds <= 30 and p.offload is False and p.quantize is True
+    assert memory.resolve("safe", None, vram_mb=6144).device == "cuda"
+    assert memory.resolve("safe", None, vram_mb=1024).device == "cpu"          # too little VRAM
+    assert memory.resolve("safe", {"device": "cpu"}, vram_mb=6144).device == "cpu"
+    assert memory.resolve("safe", {"device": "cuda"}, vram_mb=None).device == "cuda"
+
+
+def test_oom_steps_down_gpu_then_cpu(engine):
+    from dataclasses import replace
+    engine.hw = HardwareInfo("RTX 2060", 6144, 16000)
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0, "offload": False, "quantize": False}
+    be = engine._backend("mock")
+    be.oom_unless = lambda p: p.device == "cpu"          # only CPU works
+    job = wait(engine, engine.submit("test", "", 25))
+    assert job.status == "done", job.error
+    devs = [(p.device, p.offload, p.quantize) for p in be.seen_params]
+    assert devs[0] == ("cuda", False, False)
+    assert ("cuda", True, True) in devs and devs[-1][0] == "cpu"
+    assert job.params.device == "cpu"
+
+
+def test_oom_recovers_with_offload_only(engine):
+    engine.hw = HardwareInfo("RTX 2060", 6144, 16000)
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0, "offload": False, "quantize": False}
+    engine._backend("mock").oom_unless = lambda p: p.offload and p.quantize
+    job = wait(engine, engine.submit("test", "", 15))
+    assert job.status == "done" and job.params.device == "cuda" and job.params.offload
+
+
+def test_oom_gives_clear_error_when_cpu_switch_impossible(engine):
+    engine.hw = HardwareInfo("RTX 2060", 6144, 16000)
+    engine.store.value.overrides = {"chunk_seconds": 10, "offload": True, "quantize": True}
+    be = engine._backend("mock")
+    be.oom_unless = lambda p: False
+    be.can_switch_device_live = False
+    engine._cuda_initialised = lambda: True
+    job = wait(engine, engine.submit("test", "", 15))
+    assert job.status == "error" and "Compute device" in job.error

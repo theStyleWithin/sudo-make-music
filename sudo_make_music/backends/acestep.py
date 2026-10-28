@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gc
 import inspect
+import os
 import logging
 import shutil
 import sys
@@ -50,6 +51,7 @@ class ACEStepBackend(ModelBackend):
     max_segment_seconds = 240
     min_vram_mb = 6000
     needs_model = True
+    can_switch_device_live = False   # torch cannot re-pick the GPU after CUDA initialised
     default_model_name = "ace-step"
     supports_context = True
 
@@ -73,10 +75,13 @@ class ACEStepBackend(ModelBackend):
 
     def load(self, params: GenParams, model_path=None) -> None:
         ckpt = Path(model_path) if model_path else paths.models_dir() / "ace-step"
-        key = (params.offload, params.quantize, str(ckpt))
+        key = (params.offload, params.quantize, params.device, str(ckpt))
         if self._pipe is not None and key == self._key:
             return
         self.unload()
+        if params.device == "cpu":
+            # Must happen before CUDA is initialised in this process (the app does it at startup).
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         import torch
         from acestep.pipeline_ace_step import ACEStepPipeline
 
@@ -84,7 +89,7 @@ class ACEStepBackend(ModelBackend):
             checkpoint_dir=str(ckpt),
             dtype="bfloat16",          # pipeline only knows bfloat16/float32
             torch_compile=False,       # compile spikes memory and startup time
-            cpu_offload=params.offload,
+            cpu_offload=params.offload and params.device == "cuda",
             overlapped_decode=True,    # bounded-VRAM decoder, essential on 6GB
         )
         self._pipe = ACEStepPipeline(**_filter_kwargs(ACEStepPipeline.__init__, kwargs))

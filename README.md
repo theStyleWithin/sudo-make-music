@@ -52,6 +52,13 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
 
+## No GPU / out of VRAM: automatic fallback to system RAM
+
+- **No GPU, or under 2GB VRAM:** the app starts on CPU + system RAM by itself (small 30s chunks, int8 weights). It works, but is slow; the header shows `CPU + system RAM`.
+- **GPU runs out of memory mid-song:** the failed chunk is retried automatically, first with CPU offload + int8 on the GPU, then (where the backend allows it) on the CPU. The song continues from that chunk; the step taken is shown in the status line.
+- **ACE-Step caveat:** PyTorch cannot switch GPU to CPU inside a running process once CUDA is initialised. If both GPU retries fail, the app tells you to set *Settings > Compute device = CPU* and restart. Choosing CPU (or having no GPU) before the first generation works directly.
+- Settings > Compute device lets you force `gpu` or `cpu` (restart after changing).
+
 ## Local, offline, swappable models
 
 - Every model is a plain folder in `<data>/models/<name>/` (Linux: `~/.local/share/sudo-make-music/models`, Windows portable: next to the exe) with a small `smm-model.json` (`{"backend": "acestep", "name": "..."}`).

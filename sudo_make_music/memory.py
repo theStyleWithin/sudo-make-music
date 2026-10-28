@@ -15,6 +15,7 @@ class GenParams:
     offload: bool           # CPU offload of idle model parts
     quantize: bool          # INT8 weight quantization where backend supports it
     batch_size: int = 1
+    device: str = "cuda"    # cuda | cpu (cpu = system RAM, slow)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -28,7 +29,8 @@ MODES: dict[str, dict] = {
     "quality": dict(max_duration=900, chunk_seconds=240, overlap_seconds=4.0, offload=False, quantize=False),
 }
 
-OVERRIDABLE = ("max_duration", "chunk_seconds", "overlap_seconds", "offload", "quantize")
+OVERRIDABLE = ("max_duration", "chunk_seconds", "overlap_seconds", "offload", "quantize", "device")
+MIN_GPU_VRAM_MB = 2000   # below this (or no GPU at all) the app runs on CPU + system RAM
 
 
 def recommend_mode(hw: HardwareInfo) -> str:
@@ -40,21 +42,48 @@ def recommend_mode(hw: HardwareInfo) -> str:
     return "quality"
 
 
+def pick_device(vram_mb: int | None, requested: str | None = None) -> str:
+    """auto/None -> cuda only if a GPU with usable VRAM exists; otherwise fall back to CPU."""
+    if requested in ("cpu", "cuda"):
+        return requested
+    return "cuda" if (vram_mb or 0) >= MIN_GPU_VRAM_MB else "cpu"
+
+
 def resolve(mode: str, overrides: dict | None = None, vram_mb: int | None = None) -> GenParams:
     if mode not in MODES:
         raise ValueError(f"unknown memory mode {mode!r}")
+    ov = {k: v for k, v in (overrides or {}).items() if k in OVERRIDABLE and v is not None}
+    device = pick_device(vram_mb, ov.pop("device", None))
     cfg = dict(MODES[mode])
-    for k, v in (overrides or {}).items():
-        if k in OVERRIDABLE and v is not None:
-            cfg[k] = v
+    if device == "cpu":
+        # System RAM instead of VRAM: small chunks (RAM + time per call), int8 to shrink weights,
+        # no "offload" (the model already lives in RAM).
+        cfg.update(chunk_seconds=min(cfg["chunk_seconds"], 30), offload=False, quantize=True)
+    cfg.update(ov)
     cfg["max_duration"] = max(5, int(cfg["max_duration"]))
     cfg["chunk_seconds"] = max(5, int(cfg["chunk_seconds"]))
     cfg["overlap_seconds"] = max(0.0, min(float(cfg["overlap_seconds"]), cfg["chunk_seconds"] / 2))
-    return GenParams(mode=mode, **cfg)
+    return GenParams(mode=mode, device=device, **cfg)
+
+
+def degrade(params: GenParams, can_switch_to_cpu: bool) -> tuple[GenParams, str] | None:
+    """Next step down after an out-of-memory error, or None when nothing is left to try."""
+    from dataclasses import replace
+
+    if params.device == "cuda" and not (params.offload and params.quantize):
+        return (replace(params, offload=True, quantize=True),
+                "GPU out of memory - retrying with CPU offload + int8")
+    if params.device == "cuda" and can_switch_to_cpu:
+        return (replace(params, device="cpu", offload=False, quantize=True),
+                "GPU out of memory - falling back to CPU / system RAM (slow)")
+    return None
 
 
 def describe(params: GenParams, hw: HardwareInfo) -> str:
-    gpu = f"{hw.gpu_name} {hw.vram_mb // 1024}GB" if hw.gpu_name and hw.vram_mb else "no GPU detected"
+    if params.device == "cpu":
+        gpu = "CPU + system RAM" + ("" if hw.gpu_name else " (no GPU detected)")
+    else:
+        gpu = f"{hw.gpu_name} {hw.vram_mb // 1024}GB" if hw.gpu_name and hw.vram_mb else "GPU"
     flags = []
     flags.append("offload" if params.offload else "no offload")
     flags.append("int8" if params.quantize else "fp16/bf16")

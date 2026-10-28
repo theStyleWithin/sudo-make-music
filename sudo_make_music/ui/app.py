@@ -210,6 +210,12 @@ KV = r"""
                         id: s_q
                         values: ['mode default', 'on', 'off']
                     Cap:
+                        text: 'Compute device (auto = GPU if it has VRAM, else CPU + system RAM; restart after changing)'
+                        height: dp(36)
+                    Pick:
+                        id: s_dev
+                        values: ['auto', 'gpu', 'cpu']
+                    Cap:
                         text: 'Unload model when idle (s, 0 = never)'
                     Field:
                         id: s_idle
@@ -370,6 +376,7 @@ class Root(BoxLayout):
         i.s_ov.text = str(o.get("overlap_seconds", ""))
         tri = lambda k: "mode default" if o.get(k) is None else ("on" if o[k] else "off")
         i.s_off.text, i.s_q.text = tri("offload"), tri("quantize")
+        i.s_dev.text = {None: "auto", "cuda": "gpu", "cpu": "cpu"}[o.get("device")]
         i.s_idle.text = str(s.idle_unload_seconds)
         i.s_offline.active, i.s_cont.active = s.offline_mode, s.continuity
         self.refresh_models()
@@ -384,7 +391,8 @@ class Root(BoxLayout):
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
                 offline_mode=i.s_offline.active, continuity=i.s_cont.active,
                 overrides=dict(max_duration=num(i.s_max), chunk_seconds=num(i.s_chunk),
-                               overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q))))
+                               overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q),
+                               device={"auto": None, "gpu": "cuda", "cpu": "cpu"}[i.s_dev.text])))
             self.engine.store.save()
         except Exception as e:
             self._say(str(e), True)

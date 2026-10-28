@@ -58,6 +58,9 @@ class Engine:
         self.history = history or History()
         self.hw = hardware.detect()
         self.models = ModelStore()
+        if self.active_params().device == "cpu":
+            # No usable GPU: hide CUDA before torch is ever imported so everything stays in system RAM.
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue[Job] = queue.Queue()
         self._backends: dict = {}
@@ -88,7 +91,7 @@ class Engine:
     def status(self) -> dict:
         p = self.active_params()
         return dict(hardware=self.hw.to_dict(), mode=self.active_mode(),
-                    mode_auto=self.store.value.memory_mode is None,
+                    mode_auto=self.store.value.memory_mode is None, device=p.device,
                     mode_description=memory.describe(p, self.hw), params=p.to_dict(),
                     modes=memory.MODES, backends=self.backend_infos(),
                     model_loaded=any(b.loaded for b in self._backends.values()),
@@ -197,7 +200,8 @@ class Engine:
             job.segments = len(plan)
             job.message = "loading model"
             self._apply_offline(self.store.value.offline_mode)
-            backend.load(job.params, self.resolve_model(backend))
+            model_path = self.resolve_model(backend)
+            self._with_fallback(job, backend, lambda: backend.load(job.params, model_path), model_path)
             stitcher = None
             ctx_tail, ctx_sr = None, 0
             for i, dur in enumerate(plan):
@@ -213,7 +217,8 @@ class Engine:
                 req = SegmentRequest(prompt=job.prompt, lyrics=job.lyrics, duration=dur,
                                      seed=job.seed + i, index=i, total=len(plan), steps=job.steps,
                                      context_audio=ctx_tail, context_sr=ctx_sr)
-                res = backend.generate_segment(req, job.params, prog, job.cancel.is_set)
+                res = self._with_fallback(job, backend, lambda: backend.generate_segment(
+                    req, job.params, prog, job.cancel.is_set), model_path)
                 if stitcher is None:
                     writer = WavWriter(wav, res.sample_rate, res.audio.shape[1])
                     stitcher = Stitcher(writer, max(0.0, overlap))
@@ -242,6 +247,40 @@ class Engine:
             self._record(job)
 
     @staticmethod
+    def _is_oom(e: BaseException) -> bool:
+        return "out of memory" in str(e).lower() or type(e).__name__ == "OutOfMemoryError"
+
+    @staticmethod
+    def _cuda_initialised() -> bool:
+        if "torch" not in sys.modules:
+            return False
+        import torch
+        return bool(torch.cuda.is_available() and torch.cuda.is_initialized())
+
+    def _with_fallback(self, job: Job, backend, fn, model_path):
+        """Run fn(); on out-of-memory step down: offload+int8 on GPU, then CPU/system RAM, and retry."""
+        while True:
+            try:
+                return fn()
+            except Cancelled:
+                raise
+            except Exception as e:
+                if not self._is_oom(e):
+                    raise
+                can_cpu = backend.can_switch_device_live or not self._cuda_initialised()
+                step = memory.degrade(job.params, can_cpu)
+                if step is None:
+                    raise
+                job.params, note = step
+                log.warning(note)
+                job.message = note
+                if job.params.device == "cpu":
+                    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+                backend.unload()
+                self._clear_cuda()
+                backend.load(job.params, model_path)
+
+    @staticmethod
     def _discard(wav, writer) -> None:
         if writer:
             writer.close()
@@ -251,8 +290,8 @@ class Engine:
     def _explain(e: Exception, job: Job) -> str:
         msg = f"{type(e).__name__}: {e}"
         if "out of memory" in msg.lower():
-            msg += (" — GPU ran out of memory. Switch Settings to Safe mode, enable offload/quantization, "
-                    "or lower chunk length.")
+            msg += (" — out of memory even after offload/int8. Set Settings > Compute device to CPU and restart "
+                    "the app (uses system RAM, slow), or lower the chunk length.")
         return msg
 
     def _record(self, job: Job) -> None:
