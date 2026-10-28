@@ -20,6 +20,7 @@ class MockBackend(ModelBackend):
     description = "Deterministic chord loop. Verifies chunking/stitching/export without a model."
     max_segment_seconds = 600
     supports_context = True
+    uses_gpu = False
     last_request: SegmentRequest | None = None
     oom_unless: callable | None = None   # test hook: raise CUDA OOM while this returns False for params
     seen_params: list = []

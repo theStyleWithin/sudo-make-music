@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import hardware, memory, paths
@@ -35,6 +35,9 @@ class Job:
     steps: int
     fmt: str
     continuity: bool = False
+    decision: dict | None = None            # pending hardware warning shown to the user
+    choice: str | None = None
+    decided: threading.Event = field(default_factory=threading.Event)
     status: str = "queued"      # queued running done error cancelled
     progress: float = 0.0
     message: str = ""
@@ -49,7 +52,7 @@ class Job:
         return dict(id=self.id, status=self.status, progress=self.progress, message=self.message,
                     segment=self.segment, segments=self.segments, error=self.error,
                     duration=self.duration, seed=self.seed, backend=self.backend,
-                    mode=self.params.mode, params=self.params.to_dict())
+                    mode=self.params.mode, params=self.params.to_dict(), decision=self.decision)
 
 
 class Engine:
@@ -58,9 +61,8 @@ class Engine:
         self.history = history or History()
         self.hw = hardware.detect()
         self.models = ModelStore()
-        if self.active_params().device == "cpu":
-            # No usable GPU: hide CUDA before torch is ever imported so everything stays in system RAM.
-            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        self._hid_cuda = False
+        self._set_device_env(self.active_params().device)
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue[Job] = queue.Queue()
         self._backends: dict = {}
@@ -194,11 +196,15 @@ class Engine:
         writer = None
         try:
             backend = self._backend(job.backend)
+            self._preflight_device(job, backend)
             chunk = min(job.params.chunk_seconds, backend.max_segment_seconds)
             overlap = min(job.params.overlap_seconds, chunk / 2 - 0.5) if chunk > 1 else 0
             plan = plan_segments(job.duration, chunk, max(0.0, overlap))
             job.segments = len(plan)
             job.message = "loading model"
+            if job.params.device == "cpu" and backend.uses_gpu and not backend.can_switch_device_live and self._cuda_initialised():
+                raise RuntimeError("CPU was selected after the GPU was already in use. Restart the app to run on CPU.")
+            self._set_device_env(job.params.device)
             self._apply_offline(self.store.value.offline_mode)
             model_path = self.resolve_model(backend)
             self._with_fallback(job, backend, lambda: backend.load(job.params, model_path), model_path)
@@ -246,6 +252,55 @@ class Engine:
             self._clear_cuda()
             self._record(job)
 
+    def _set_device_env(self, device: str) -> None:
+        """Hide CUDA for CPU runs (only possible before CUDA initialises); unhide if we hid it."""
+        if device == "cpu":
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+            self._hid_cuda = True
+        elif self._hid_cuda and not self._cuda_initialised():
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+            self._hid_cuda = False
+
+    def ask(self, job: Job, title: str, reason: str, options: list[tuple[str, str]]) -> str:
+        """Pause the job and show a hardware warning; returns the id of the button the user pressed."""
+        job.decided.clear()
+        job.choice = None
+        job.decision = dict(title=title, reason=reason,
+                            options=[dict(id=i, label=l) for i, l in options] + [dict(id="cancel", label="Cancel generation")])
+        prev, job.status, job.message = job.status, "needs_input", title
+        while not job.decided.wait(0.25):
+            if job.cancel.is_set():
+                break
+        choice = job.choice or "cancel"
+        job.decision, job.status, job.message = None, prev, "continuing"
+        if job.cancel.is_set() or choice == "cancel":
+            raise Cancelled()
+        return choice
+
+    def resolve_decision(self, job_id: str, choice: str) -> None:
+        job = self.jobs.get(job_id)
+        if not job or not job.decision or choice not in [o["id"] for o in job.decision["options"]]:
+            raise ValueError("no such pending choice")
+        job.choice = choice
+        job.decided.set()
+
+    def _preflight_device(self, job: Job, backend) -> None:
+        """No GPU / too little VRAM and the user did not pick CPU themselves: warn and let them choose."""
+        s = self.store.value
+        auto = s.overrides.get("device") is None
+        if not (backend.uses_gpu and auto and job.params.device == "cpu" and s.ask_on_fallback):
+            return
+        hw = self.hw
+        why = ("No GPU was detected." if not hw.gpu_name else
+               f"{hw.gpu_name} has only {hw.vram_mb} MB of VRAM (needs at least {memory.MIN_GPU_VRAM_MB} MB).")
+        opts = [("cpu", "Continue on CPU + system RAM (slow)")]
+        if hw.gpu_name:
+            opts.append(("gpu", "Try the GPU anyway (may fail)"))
+        choice = self.ask(job, "Hardware warning: no usable GPU memory",
+                          why + " Generation on the CPU uses system RAM and can be many times slower.", opts)
+        if choice == "gpu":
+            job.params = replace(job.params, device="cuda", offload=True, quantize=True)
+
     @staticmethod
     def _is_oom(e: BaseException) -> bool:
         return "out of memory" in str(e).lower() or type(e).__name__ == "OutOfMemoryError"
@@ -268,14 +323,27 @@ class Engine:
                 if not self._is_oom(e):
                     raise
                 can_cpu = backend.can_switch_device_live or not self._cuda_initialised()
-                step = memory.degrade(job.params, can_cpu)
-                if step is None:
+                opts = memory.fallback_options(job.params, can_cpu)
+                if not opts:
                     raise
-                job.params, note = step
+                if self.store.value.ask_on_fallback:
+                    choice = self.ask(job, "Hardware warning: GPU out of memory",
+                                      f"{job.params.device.upper()} memory ran out while generating. Choose which resource to use instead.",
+                                      [(i, l) for i, l, _ in opts])
+                    new = next(n for i, _, n in opts if i == choice)
+                    if new is None:   # needs a restart: persist the setting and stop this job
+                        self.store.value.overrides["device"] = "cpu"
+                        self.store.save()
+                        raise RuntimeError("Compute device set to CPU. Restart the app and generate again.")
+                    job.params, note = new, "switching resource"
+                else:
+                    step = memory.degrade(job.params, can_cpu)
+                    if step is None:
+                        raise
+                    job.params, note = step
                 log.warning(note)
                 job.message = note
-                if job.params.device == "cpu":
-                    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+                self._set_device_env(job.params.device)
                 backend.unload()
                 self._clear_cuda()
                 backend.load(job.params, model_path)

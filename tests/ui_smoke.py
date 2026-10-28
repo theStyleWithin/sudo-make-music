@@ -33,7 +33,7 @@ def step(dt):
     s = len(steps)
     steps.append(1)
     if s == 0:
-        app.engine.store.value.update({"backend": "mock"})
+        app.engine.store.value.update({"backend": "mock", "ask_on_fallback": False})
         r.refresh_status()
         r.ids.prompt.text = "lofi chill"
         r.ids.dur.value = 20

@@ -66,16 +66,30 @@ def resolve(mode: str, overrides: dict | None = None, vram_mb: int | None = None
     return GenParams(mode=mode, device=device, **cfg)
 
 
-def degrade(params: GenParams, can_switch_to_cpu: bool) -> tuple[GenParams, str] | None:
-    """Next step down after an out-of-memory error, or None when nothing is left to try."""
+def fallback_options(params: GenParams, can_switch_to_cpu: bool) -> list[tuple[str, str, GenParams | None]]:
+    """What the user can pick after running out of GPU memory: (id, button label, new params).
+    new params None = needs a restart (applied via settings instead)."""
     from dataclasses import replace
 
+    opts: list[tuple[str, str, GenParams | None]] = []
     if params.device == "cuda" and not (params.offload and params.quantize):
-        return (replace(params, offload=True, quantize=True),
-                "GPU out of memory - retrying with CPU offload + int8")
-    if params.device == "cuda" and can_switch_to_cpu:
-        return (replace(params, device="cpu", offload=False, quantize=True),
-                "GPU out of memory - falling back to CPU / system RAM (slow)")
+        opts.append(("offload", "Keep GPU, offload to RAM + int8 (slower)",
+                     replace(params, offload=True, quantize=True)))
+    if params.device == "cuda":
+        cpu = replace(params, device="cpu", offload=False, quantize=True)
+        if can_switch_to_cpu:
+            opts.append(("cpu", "Use CPU + system RAM (much slower)", cpu))
+        else:
+            opts.append(("cpu_restart", "Switch to CPU, then restart the app", None))
+    return opts
+
+
+def degrade(params: GenParams, can_switch_to_cpu: bool) -> tuple[GenParams, str] | None:
+    """Automatic step down (used when hardware warnings are off). None = nothing left to try."""
+    for oid, label, new in fallback_options(params, can_switch_to_cpu):
+        if new is not None:
+            return new, "GPU out of memory - " + ("retrying with CPU offload + int8" if oid == "offload"
+                                                  else "falling back to CPU / system RAM (slow)")
     return None
 
 

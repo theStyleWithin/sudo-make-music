@@ -52,12 +52,14 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
 
-## No GPU / out of VRAM: automatic fallback to system RAM
+## Choosing the resource (GPU vs CPU + system RAM)
 
-- **No GPU, or under 2GB VRAM:** the app starts on CPU + system RAM by itself (small 30s chunks, int8 weights). It works, but is slow; the header shows `CPU + system RAM`.
-- **GPU runs out of memory mid-song:** the failed chunk is retried automatically, first with CPU offload + int8 on the GPU, then (where the backend allows it) on the CPU. The song continues from that chunk; the step taken is shown in the status line.
-- **ACE-Step caveat:** PyTorch cannot switch GPU to CPU inside a running process once CUDA is initialised. If both GPU retries fail, the app tells you to set *Settings > Compute device = CPU* and restart. Choosing CPU (or having no GPU) before the first generation works directly.
-- Settings > Compute device lets you force `gpu` or `cpu` (restart after changing).
+- **You choose:** the Create screen has a *Resource* selector (Auto / GPU / CPU + system RAM); Settings has the same plus the warning switch below. Restart the app after switching if the GPU was already used this session (PyTorch limitation with ACE-Step).
+- **Auto:** uses the GPU if it has at least 2GB VRAM, otherwise CPU + system RAM (small 30s chunks, int8 weights; works, but slow).
+- **Hardware warning popup:** when the app needs a different resource than you chose, it pauses and asks, with a button per option:
+  - no GPU / too little VRAM at start: *Continue on CPU + system RAM* / *Try the GPU anyway* / *Cancel*;
+  - GPU runs out of memory mid-song: *Keep GPU, offload to RAM + int8* / *Use CPU + system RAM* / *Cancel*. The song resumes at the chunk that failed. If the backend can't switch GPU to CPU live (ACE-Step), the button saves "CPU" as the setting and asks you to restart.
+  - No popup if you explicitly picked CPU yourself. Turn the popup off in Settings (*Hardware warning popup*) to let the app step down automatically instead.
 
 ## Local, offline, swappable models
 

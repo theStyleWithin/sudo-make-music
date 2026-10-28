@@ -16,13 +16,14 @@ def engine(tmp_path, monkeypatch):
     monkeypatch.setenv("SUDO_MAKE_MUSIC_HOME", str(tmp_path))
     e = Engine(SettingsStore(tmp_path / "s.json"), History(tmp_path / "h.db"))
     e.store.value.backend = "mock"
+    e.store.value.ask_on_fallback = False     # most tests want the automatic path
     yield e
     e.shutdown()
 
 
 def wait(engine, job, timeout=30):
     t = time.time()
-    while job.status in ("queued", "running") and time.time() - t < timeout:
+    while job.status in ("queued", "running", "needs_input") and time.time() - t < timeout:
         time.sleep(0.05)
     return job
 
@@ -196,3 +197,84 @@ def test_oom_gives_clear_error_when_cpu_switch_impossible(engine):
     engine._cuda_initialised = lambda: True
     job = wait(engine, engine.submit("test", "", 15))
     assert job.status == "error" and "Compute device" in job.error
+
+
+def wait_status(job, status, timeout=10):
+    t = time.time()
+    while job.status != status and time.time() - t < timeout:
+        time.sleep(0.05)
+    return job.status == status
+
+
+def _gpu_engine(engine, **ov):
+    engine.hw = HardwareInfo("RTX 2060", 6144, 16000)
+    engine.store.value.ask_on_fallback = True
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0, "offload": False,
+                                    "quantize": False, **ov}
+
+
+def test_oom_asks_user_and_applies_choice(engine):
+    _gpu_engine(engine)
+    be = engine._backend("mock")
+    be.oom_unless = lambda p: p.device == "cpu"
+    job = engine.submit("test", "", 15)
+    assert wait_status(job, "needs_input")
+    ids = [o["id"] for o in job.to_dict()["decision"]["options"]]
+    assert ids == ["offload", "cpu", "cancel"]
+    engine.resolve_decision(job.id, "offload")              # still OOMs on the GPU -> asks again
+    t = time.time()
+    while time.time() - t < 10 and not (job.decision and "offload" not in [o["id"] for o in job.decision["options"]]):
+        time.sleep(0.05)
+    ids = [o["id"] for o in job.decision["options"]]
+    assert "offload" not in ids and "cpu" in ids
+    engine.resolve_decision(job.id, "cpu")
+    wait(engine, job)
+    assert job.status == "done" and job.params.device == "cpu"
+
+
+def test_oom_user_can_cancel(engine):
+    _gpu_engine(engine)
+    engine._backend("mock").oom_unless = lambda p: False
+    job = engine.submit("test", "", 15)
+    assert wait_status(job, "needs_input")
+    engine.resolve_decision(job.id, "cancel")
+    wait(engine, job)
+    assert job.status == "cancelled"
+
+
+def test_oom_cpu_restart_choice_persists_setting(engine):
+    _gpu_engine(engine, offload=True, quantize=True)
+    be = engine._backend("mock")
+    be.oom_unless = lambda p: False
+    be.can_switch_device_live = False
+    engine._cuda_initialised = lambda: True
+    job = engine.submit("test", "", 15)
+    assert wait_status(job, "needs_input")
+    assert [o["id"] for o in job.decision["options"]] == ["cpu_restart", "cancel"]
+    engine.resolve_decision(job.id, "cpu_restart")
+    wait(engine, job)
+    assert job.status == "error" and "Restart" in job.error
+    assert engine.store.value.overrides["device"] == "cpu"
+
+
+def test_no_gpu_warns_before_starting(engine):
+    engine.hw = HardwareInfo(None, None, 16000)
+    engine.store.value.ask_on_fallback = True
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0}
+    be = engine._backend("mock")
+    be.uses_gpu = True
+    job = engine.submit("test", "", 15)
+    assert wait_status(job, "needs_input")
+    assert "No GPU" in job.decision["reason"]
+    engine.resolve_decision(job.id, "cpu")
+    wait(engine, job)
+    assert job.status == "done" and job.params.device == "cpu"
+
+
+def test_no_warning_when_user_chose_cpu(engine):
+    engine.hw = HardwareInfo(None, None, 16000)
+    engine.store.value.ask_on_fallback = True
+    engine.store.value.overrides = {"chunk_seconds": 10, "device": "cpu"}
+    engine._backend("mock").uses_gpu = True
+    job = wait(engine, engine.submit("test", "", 15))
+    assert job.status == "done"          # manual choice: no popup

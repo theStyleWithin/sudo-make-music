@@ -110,6 +110,12 @@ KV = r"""
                     Pick:
                         id: backend
                         on_text: root.on_backend(self.text)
+                    Cap:
+                        text: 'Resource: ' + root.device_note
+                    Pick:
+                        id: resource
+                        values: ['Auto', 'GPU', 'CPU + system RAM']
+                        on_text: root.on_resource(self.text)
                     BoxLayout:
                         size_hint_y: None
                         height: dp(44)
@@ -247,6 +253,16 @@ KV = r"""
                             width: dp(90)
                     BoxLayout:
                         size_hint_y: None
+                        height: dp(40)
+                        Cap:
+                            text: 'Hardware warning popup before switching resource'
+                            height: dp(40)
+                        Switch:
+                            id: s_warn
+                            size_hint_x: None
+                            width: dp(90)
+                    BoxLayout:
+                        size_hint_y: None
                         height: dp(56)
                         Cap:
                             text: 'Continue each chunk from the previous one (experimental; helps long songs hang together)'
@@ -319,6 +335,7 @@ class Root(BoxLayout):
     max_duration = NumericProperty(300)
     effective = StringProperty("")
     install_log = StringProperty("")
+    device_note = StringProperty("")
 
     def __init__(self, engine: Engine, **kw):
         super().__init__(**kw)
@@ -347,6 +364,7 @@ class Root(BoxLayout):
         p = st["params"]
         self.effective = (f"Effective: max {p['max_duration']}s, chunk {p['chunk_seconds']}s, "
                           f"offload {p['offload']}, int8 {p['quantize']}")
+        self.device_note = {"cuda": "using GPU", "cpu": "using CPU + system RAM"}[st["device"]]
         avail = [b for b in st["backends"] if b["available"]]
         names = {b["id"]: b["name"] for b in st["backends"]}
         self._backend_by_name = {names[b["id"]] + ("" if b["available"] else " (not installed)"): b["id"]
@@ -379,6 +397,8 @@ class Root(BoxLayout):
         i.s_dev.text = {None: "auto", "cuda": "gpu", "cpu": "cpu"}[o.get("device")]
         i.s_idle.text = str(s.idle_unload_seconds)
         i.s_offline.active, i.s_cont.active = s.offline_mode, s.continuity
+        i.s_warn.active = s.ask_on_fallback
+        i.resource.text = {None: "Auto", "cuda": "GPU", "cpu": "CPU + system RAM"}[o.get("device")]
         self.refresh_models()
 
     def save_settings(self):
@@ -389,7 +409,7 @@ class Root(BoxLayout):
             self.engine.store.value.update(dict(
                 memory_mode=i.s_mode.text, seed=i.s_seed.text, steps=num(i.s_steps) or 60,
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
-                offline_mode=i.s_offline.active, continuity=i.s_cont.active,
+                offline_mode=i.s_offline.active, continuity=i.s_cont.active, ask_on_fallback=i.s_warn.active,
                 overrides=dict(max_duration=num(i.s_max), chunk_seconds=num(i.s_chunk),
                                overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q),
                                device={"auto": None, "gpu": "cuda", "cpu": "cpu"}[i.s_dev.text])))
@@ -399,6 +419,52 @@ class Root(BoxLayout):
             return
         self.refresh_status()
         self._say("Settings saved.")
+
+    # ---- resource selection / hardware warning ---------------------------
+    def on_resource(self, label):
+        dev = {"Auto": None, "GPU": "cuda", "CPU + system RAM": "cpu"}.get(label, "?")
+        if dev == "?" or "resource" not in self.ids or self.engine.store.value.overrides.get("device", None) == dev:
+            return
+        ov = dict(self.engine.store.value.overrides)
+        ov["device"] = dev
+        self.engine.store.value.update({"overrides": ov})
+        self.engine.store.save()
+        self.ids.s_dev.text = {None: "auto", "cuda": "gpu", "cpu": "cpu"}[dev]
+        self.refresh_status()
+        self._say("Resource changed. If the GPU was already used this session, restart the app to switch." if dev else "Resource: auto.")
+
+    _warn_popup = None
+
+    def _sync_warning(self, job):
+        """Show/hide the hardware-warning popup that mirrors job.decision."""
+        d = job.decision if job and job.status == "needs_input" else None
+        if d and not self._warn_popup:
+            from kivy.factory import Factory
+            from kivy.uix.label import Label
+            from kivy.uix.popup import Popup
+            box = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+            msg = Label(text=d["reason"], text_size=(dp(300), None), halign="left", valign="top")
+            box.add_widget(msg)
+            pop = Popup(title=d["title"], content=box, size_hint=(0.92, None), auto_dismiss=False,
+                        height=dp(150 + 54 * len(d["options"])), title_color=(1, 0.8, 0.3, 1))
+            for o in d["options"]:
+                b = (Factory.Btn if o["id"] == "cancel" else Factory.Primary)(text=o["label"])
+                b.bind(on_release=lambda _w, oid=o["id"]: self._answer(job, oid))
+                box.add_widget(b)
+            self._warn_popup = pop
+            pop.open()
+        elif not d and self._warn_popup:
+            self._warn_popup.dismiss()
+            self._warn_popup = None
+
+    def _answer(self, job, choice):
+        try:
+            self.engine.resolve_decision(job.id, choice)
+        except ValueError:
+            pass
+        if self._warn_popup:
+            self._warn_popup.dismiss()
+            self._warn_popup = None
 
     # ---- local models ----------------------------------------------------
     def refresh_models(self):
@@ -493,9 +559,14 @@ class Root(BoxLayout):
         if not j:
             return
         self.progress = j.progress
+        self._sync_warning(j)
+        if j.status == "needs_input":
+            self._say(f"{j.message} - waiting for your choice")
+            return
         if j.status in ("queued", "running"):
             self._say(f"{j.status} - {j.message} (seed {j.seed})")
             return
+        self._sync_warning(None)
         self.busy = False
         self.job = None
         if j.status == "done":
