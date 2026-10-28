@@ -12,6 +12,8 @@ every model is a local, swappable folder.
 | `sudo-make-music-android.apk` | Android (arm64) | **Debug-signed** build, install from outside the store. UI only for now: see limits. |
 | `SHA256SUMS.txt` | | Checksums for the files above. |
 
+Every file carries a GitHub build-provenance attestation: `gh attestation verify <file> --repo theStyleWithin/sudo-make-music` proves it was built by this repo's public CI. There is no paid code-signing certificate (see `docs/SIGNING.md`).
+
 ### Windows: community-tested, please report
 The maintainer does not use Windows and does **not** test the Windows build. It is offered as a courtesy so Windows users are not left out.
 CI builds it and runs a built-in self-check (`--selfcheck`) on the finished exe, but nobody has used it on a real Windows PC. If you try it,
