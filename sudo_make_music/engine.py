@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 import queue
 import random
 import sys
@@ -10,11 +11,13 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import hardware, memory, paths
 from .audio import WavWriter, Stitcher, plan_segments, export_mp3
 from .backends import registry, SegmentRequest, Cancelled
 from .history import History
+from .models import ModelStore
 from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
@@ -31,6 +34,7 @@ class Job:
     params: memory.GenParams
     steps: int
     fmt: str
+    continuity: bool = False
     status: str = "queued"      # queued running done error cancelled
     progress: float = 0.0
     message: str = ""
@@ -53,6 +57,7 @@ class Engine:
         self.store = store or SettingsStore()
         self.history = history or History()
         self.hw = hardware.detect()
+        self.models = ModelStore()
         self.jobs: dict[str, Job] = {}
         self._q: queue.Queue[Job] = queue.Queue()
         self._backends: dict = {}
@@ -87,7 +92,56 @@ class Engine:
                     mode_description=memory.describe(p, self.hw), params=p.to_dict(),
                     modes=memory.MODES, backends=self.backend_infos(),
                     model_loaded=any(b.loaded for b in self._backends.values()),
-                    free_vram_mb=hardware.free_vram_mb())
+                    free_vram_mb=hardware.free_vram_mb(),
+                    models=[m.to_dict() for m in self.models.list()],
+                    selected_models=self.store.value.models,
+                    offline_mode=self.store.value.offline_mode)
+
+    # ---- models --------------------------------------------------------
+    def resolve_model(self, backend) -> "Path | None":
+        """Pick the model folder for a backend: selected > first installed > its downloadable default."""
+        if not backend.needs_model:
+            return None
+        s = self.store.value
+        picked = self.models.get(s.models.get(backend.id, ""))
+        if picked and picked.backend == backend.id:
+            return Path(picked.path)
+        installed = self.models.list(backend.id)
+        if installed:
+            return Path(installed[0].path)
+        folder = paths.models_dir() / backend.default_model_name
+        if s.offline_mode:
+            raise RuntimeError(f"No local {backend.name} model installed and offline mode is on. "
+                               "Import a model folder in Settings > Models, or turn offline mode off to download once.")
+        return folder
+
+    def import_model(self, path: str, backend: str | None = None, name: str | None = None, link: bool = False):
+        b = self._backend(backend or self.store.value.backend)
+        info = self.models.import_folder(Path(path), b.id, name, link)
+        self.store.value.models[info.backend] = info.id
+        self.store.save()
+        return info
+
+    def select_model(self, backend: str, model_id: str) -> None:
+        m = self.models.get(model_id)
+        if not m or m.backend != backend:
+            raise ValueError("model does not belong to that backend")
+        self.store.value.models[backend] = model_id
+        self.store.save()
+
+    def delete_model(self, model_id: str) -> None:
+        self.models.delete(model_id)
+        self.store.value.models = {k: v for k, v in self.store.value.models.items() if v != model_id}
+        self.store.save()
+        self.unload_all()
+
+    @staticmethod
+    def _apply_offline(on: bool) -> None:
+        for k in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE"):
+            if on:
+                os.environ[k] = "1"
+            else:
+                os.environ.pop(k, None)
 
     # ---- submit / cancel -----------------------------------------------
     def submit(self, prompt: str, lyrics: str, duration: int) -> Job:
@@ -99,11 +153,12 @@ class Engine:
             raise RuntimeError(why)
         if not prompt.strip():
             raise ValueError("style prompt is required")
+        self.resolve_model(backend)   # fail fast (e.g. offline mode with no local model)
         duration = int(min(max(5, duration), params.max_duration))
         seed = s.seed if s.seed is not None else random.randint(0, 2**31 - 1)
         job = Job(id=uuid.uuid4().hex[:12], prompt=prompt.strip(), lyrics=lyrics.strip(),
                   duration=duration, seed=seed, backend=s.backend, params=params,
-                  steps=s.steps, fmt=s.output_format)
+                  steps=s.steps, fmt=s.output_format, continuity=s.continuity and backend.supports_context)
         self.jobs[job.id] = job
         self._q.put(job)
         return job
@@ -141,8 +196,10 @@ class Engine:
             plan = plan_segments(job.duration, chunk, max(0.0, overlap))
             job.segments = len(plan)
             job.message = "loading model"
-            backend.load(job.params)
+            self._apply_offline(self.store.value.offline_mode)
+            backend.load(job.params, self.resolve_model(backend))
             stitcher = None
+            ctx_tail, ctx_sr = None, 0
             for i, dur in enumerate(plan):
                 if job.cancel.is_set():
                     raise Cancelled()
@@ -154,12 +211,16 @@ class Engine:
                     job.progress = base + f / len(plan)
 
                 req = SegmentRequest(prompt=job.prompt, lyrics=job.lyrics, duration=dur,
-                                     seed=job.seed + i, index=i, total=len(plan), steps=job.steps)
+                                     seed=job.seed + i, index=i, total=len(plan), steps=job.steps,
+                                     context_audio=ctx_tail, context_sr=ctx_sr)
                 res = backend.generate_segment(req, job.params, prog, job.cancel.is_set)
                 if stitcher is None:
                     writer = WavWriter(wav, res.sample_rate, res.audio.shape[1])
                     stitcher = Stitcher(writer, max(0.0, overlap))
                 stitcher.add(res.audio, res.sample_rate)  # streamed to disk
+                if job.continuity:   # keep only ~10s of the previous segment as context
+                    n = int(10 * res.sample_rate)
+                    ctx_tail, ctx_sr = res.audio[-n:].copy(), res.sample_rate
                 del res
                 self._clear_cuda()
             stitcher.finish()

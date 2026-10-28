@@ -18,6 +18,9 @@ class Settings:
     steps: int = 60
     idle_unload_seconds: int = 120
     output_format: str = "wav"          # wav | mp3
+    models: dict = field(default_factory=dict)   # backend id -> selected model id
+    offline_mode: bool = False          # block all network access from model libraries
+    continuity: bool = False            # condition each chunk on the previous one (experimental)
 
     def update(self, data: dict) -> None:
         if "backend" in data:
@@ -36,6 +39,12 @@ class Settings:
             self.steps = max(1, min(200, int(data["steps"])))
         if "idle_unload_seconds" in data:
             self.idle_unload_seconds = max(0, int(data["idle_unload_seconds"]))
+        if "models" in data:
+            self.models = {str(k): str(v) for k, v in (data["models"] or {}).items() if v}
+        if "offline_mode" in data:
+            self.offline_mode = bool(data["offline_mode"])
+        if "continuity" in data:
+            self.continuity = bool(data["continuity"])
         if "output_format" in data:
             if data["output_format"] not in ("wav", "mp3"):
                 raise ValueError("output_format must be wav or mp3")

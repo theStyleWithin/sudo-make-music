@@ -215,6 +215,42 @@ KV = r"""
                         id: s_idle
                         input_filter: 'int'
                     Cap:
+                        text: 'Local models for the selected backend (stored on this device, used offline)'
+                    Pick:
+                        id: s_model
+                        on_text: root.on_model(self.text)
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44)
+                        spacing: dp(8)
+                        Btn:
+                            text: 'Import model folder...'
+                            on_release: root.pick_folder()
+                        Btn:
+                            text: 'Delete selected'
+                            on_release: root.delete_model()
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(40)
+                        Cap:
+                            text: 'Offline mode: block all network access'
+                            height: dp(40)
+                        Switch:
+                            id: s_offline
+                            size_hint_x: None
+                            width: dp(90)
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(56)
+                        Cap:
+                            text: 'Continue each chunk from the previous one (experimental; helps long songs hang together)'
+                            height: dp(56)
+                            valign: 'middle'
+                        Switch:
+                            id: s_cont
+                            size_hint_x: None
+                            width: dp(90)
+                    Cap:
                         text: root.effective
                         height: dp(36)
                     BoxLayout:
@@ -321,6 +357,7 @@ class Root(BoxLayout):
         if bid and bid != self.engine.store.value.backend:
             self.engine.store.value.update({"backend": bid})
             self.engine.store.save()
+            self.refresh_models()
 
     def load_settings(self):
         s, o = self.engine.store.value, self.engine.store.value.overrides
@@ -334,6 +371,8 @@ class Root(BoxLayout):
         tri = lambda k: "mode default" if o.get(k) is None else ("on" if o[k] else "off")
         i.s_off.text, i.s_q.text = tri("offload"), tri("quantize")
         i.s_idle.text = str(s.idle_unload_seconds)
+        i.s_offline.active, i.s_cont.active = s.offline_mode, s.continuity
+        self.refresh_models()
 
     def save_settings(self):
         i = self.ids
@@ -343,6 +382,7 @@ class Root(BoxLayout):
             self.engine.store.value.update(dict(
                 memory_mode=i.s_mode.text, seed=i.s_seed.text, steps=num(i.s_steps) or 60,
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
+                offline_mode=i.s_offline.active, continuity=i.s_cont.active,
                 overrides=dict(max_duration=num(i.s_max), chunk_seconds=num(i.s_chunk),
                                overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q))))
             self.engine.store.save()
@@ -351,6 +391,63 @@ class Root(BoxLayout):
             return
         self.refresh_status()
         self._say("Settings saved.")
+
+    # ---- local models ----------------------------------------------------
+    def refresh_models(self):
+        bid = self.engine.store.value.backend
+        self._model_by_label = {f"{m.name} ({m.size_mb} MB)": m.id for m in self.engine.models.list(bid)}
+        sp = self.ids.s_model
+        sp.values = list(self._model_by_label)
+        sel = self.engine.store.value.models.get(bid)
+        label = next((l for l, i in self._model_by_label.items() if i == sel), None)
+        sp.text = label or (sp.values[0] if sp.values else "none installed (ACE-Step downloads once when online)")
+
+    def on_model(self, label):
+        mid = getattr(self, "_model_by_label", {}).get(label)
+        if mid:
+            self.engine.select_model(self.engine.store.value.backend, mid)
+
+    def pick_folder(self):
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+        from kivy.factory import Factory
+        box = BoxLayout(orientation="vertical", spacing=dp(6))
+        chooser = FileChooserListView(dirselect=True, path=str(Path.home()))
+        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        ok, no = Factory.Primary(text="Import this folder"), Factory.Btn(text="Cancel")
+        row.add_widget(ok)
+        row.add_widget(no)
+        box.add_widget(chooser)
+        box.add_widget(row)
+        pop = Popup(title="Choose a model folder", content=box, size_hint=(0.95, 0.9))
+        no.bind(on_release=pop.dismiss)
+
+        def go(*_):
+            sel = chooser.selection[0] if chooser.selection else chooser.path
+            pop.dismiss()
+            self.import_model(sel)
+        ok.bind(on_release=go)
+        pop.open()
+
+    def import_model(self, path):
+        import threading
+        self._say(f"Importing {path} ... (large models take a while)")
+
+        def work():
+            try:
+                info = self.engine.import_model(path)
+                Clock.schedule_once(lambda dt: (self.refresh_models(), self._say(f"Imported {info.name}")))
+            except Exception as e:
+                Clock.schedule_once(lambda dt, e=e: self._say(f"Import failed: {e}", True))
+        threading.Thread(target=work, daemon=True).start()
+
+    def delete_model(self):
+        mid = getattr(self, "_model_by_label", {}).get(self.ids.s_model.text)
+        if not mid:
+            return self._say("No model selected.", True)
+        self.engine.delete_model(mid)
+        self.refresh_models()
+        self._say("Model deleted.")
 
     def unload(self):
         self.engine.unload_all()

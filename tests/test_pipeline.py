@@ -100,3 +100,57 @@ def test_install_commands():
     assert "--target" in cmds[0] and "whl/cpu" in " ".join(cmds[0])
     with pytest.raises(ValueError):
         runtime.install_commands("bogus")
+
+
+def test_continuity_passes_context(engine):
+    engine.store.value.update({"continuity": True})
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0}
+    job = wait(engine, engine.submit("test", "", 25))
+    assert job.status == "done", job.error
+    req = engine._backends["mock"].last_request
+    assert req.index > 0 and req.context_audio is not None and req.context_sr == 44100
+
+
+def test_no_context_when_off(engine):
+    engine.store.value.overrides = {"chunk_seconds": 10, "overlap_seconds": 1.0}
+    wait(engine, engine.submit("test", "", 25))
+    assert engine._backends["mock"].last_request.context_audio is None
+
+
+def test_long_song_streams_to_disk(engine):
+    engine.store.value.overrides = {"chunk_seconds": 60, "overlap_seconds": 3.0, "max_duration": 1800}
+    job = wait(engine, engine.submit("test", "", 1500), timeout=120)   # 25 minutes
+    assert job.status == "done", job.error
+    with wave.open(str(engine.output_path(job.id, "wav")), "rb") as w:
+        assert abs(w.getnframes() / w.getframerate() - 1500) < 0.1
+
+
+def test_model_store_import_swap_delete(engine, tmp_path):
+    src = tmp_path / "my-model"
+    src.mkdir()
+    (src / "weights.bin").write_bytes(b"x" * 10)
+    info = engine.import_model(str(src), "acestep", "My Finetune")
+    assert info.backend == "acestep" and engine.store.value.models["acestep"] == info.id
+    src2 = tmp_path / "other"
+    src2.mkdir()
+    info2 = engine.import_model(str(src2), "acestep", "My Finetune")   # name clash -> unique id
+    assert info2.id != info.id
+    engine.select_model("acestep", info.id)
+    assert engine.store.value.models["acestep"] == info.id
+    from sudo_make_music.backends import registry
+    assert str(engine.resolve_model(registry()["acestep"]())) == info.path
+    engine.delete_model(info.id)
+    assert engine.models.get(info.id) is None and info.id not in engine.store.value.models.values()
+
+
+def test_offline_mode_requires_local_model(engine):
+    engine.store.value.backend = "acestep"
+    engine.store.value.update({"offline_mode": True})
+    from sudo_make_music.backends import registry
+    with pytest.raises(RuntimeError, match="offline"):
+        engine.resolve_model(registry()["acestep"]())
+    import os
+    engine._apply_offline(True)
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    engine._apply_offline(False)
+    assert "HF_HUB_OFFLINE" not in os.environ

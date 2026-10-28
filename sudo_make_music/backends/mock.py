@@ -19,11 +19,13 @@ class MockBackend(ModelBackend):
     name = "Mock synth (no AI)"
     description = "Deterministic chord loop. Verifies chunking/stitching/export without a model."
     max_segment_seconds = 600
+    supports_context = True
+    last_request: SegmentRequest | None = None
 
     def __init__(self):
         self._loaded = False
 
-    def load(self, params: GenParams) -> None:
+    def load(self, params: GenParams, model_path=None) -> None:
         self._loaded = True
 
     @property
@@ -34,6 +36,7 @@ class MockBackend(ModelBackend):
         self._loaded = False
 
     def generate_segment(self, req, params, progress, cancelled):
+        self.last_request = req
         rng = np.random.default_rng(req.seed)
         base = 110.0 * 2 ** (zlib.crc32(req.prompt.encode()) % 12 / 12)
         n = int(req.duration * SR)

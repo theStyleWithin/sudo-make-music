@@ -22,10 +22,10 @@ class GenParams:
 
 MODES: dict[str, dict] = {
     # Longest practical on ~6GB: small chunks, everything offloaded/quantized.
-    "safe": dict(max_duration=600, chunk_seconds=60, overlap_seconds=3.0, offload=True, quantize=True),
-    "balanced": dict(max_duration=480, chunk_seconds=120, overlap_seconds=3.0, offload=True, quantize=False),
+    "safe": dict(max_duration=1800, chunk_seconds=60, overlap_seconds=3.0, offload=True, quantize=True),
+    "balanced": dict(max_duration=1200, chunk_seconds=120, overlap_seconds=3.0, offload=True, quantize=False),
     # Backend-native chunk size, no offload. May OOM on low VRAM.
-    "quality": dict(max_duration=300, chunk_seconds=240, overlap_seconds=4.0, offload=False, quantize=False),
+    "quality": dict(max_duration=900, chunk_seconds=240, overlap_seconds=4.0, offload=False, quantize=False),
 }
 
 OVERRIDABLE = ("max_duration", "chunk_seconds", "overlap_seconds", "offload", "quantize")

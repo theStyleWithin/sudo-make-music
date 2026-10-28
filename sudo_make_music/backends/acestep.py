@@ -49,6 +49,9 @@ class ACEStepBackend(ModelBackend):
                    "Default for 6GB GPUs. Weights (~7GB) download on first load, then run offline.")
     max_segment_seconds = 240
     min_vram_mb = 6000
+    needs_model = True
+    default_model_name = "ace-step"
+    supports_context = True
 
     def __init__(self):
         self._pipe = None
@@ -68,15 +71,15 @@ class ACEStepBackend(ModelBackend):
     def loaded(self) -> bool:
         return self._pipe is not None
 
-    def load(self, params: GenParams) -> None:
-        key = (params.offload, params.quantize)
+    def load(self, params: GenParams, model_path=None) -> None:
+        ckpt = Path(model_path) if model_path else paths.models_dir() / "ace-step"
+        key = (params.offload, params.quantize, str(ckpt))
         if self._pipe is not None and key == self._key:
             return
         self.unload()
         import torch
         from acestep.pipeline_ace_step import ACEStepPipeline
 
-        ckpt = paths.models_dir() / "ace-step"
         kwargs = dict(
             checkpoint_dir=str(ckpt),
             dtype="bfloat16",          # pipeline only knows bfloat16/float32
@@ -114,41 +117,61 @@ class ACEStepBackend(ModelBackend):
             log.warning(self._quant_note)
 
     def generate_segment(self, req: SegmentRequest, params: GenParams, progress, cancelled):
-        import soundfile as sf
-
         if cancelled():
             raise Cancelled()
         tmp = Path(tempfile.mkdtemp(prefix="smm-ace-", dir=paths.work_dir()))
         try:
-            call = dict(
-                audio_duration=float(req.duration),
-                prompt=req.prompt,
-                lyrics=req.lyrics or "[instrumental]",
-                infer_step=req.steps or 60,
-                guidance_scale=15.0,
-                scheduler_type="euler",
-                cfg_type="apg",
-                omega_scale=10.0,
-                manual_seeds=str(req.seed),
-                guidance_interval=0.5,
-                guidance_interval_decay=0.0,
-                min_guidance_scale=3.0,
-                use_erg_tag=True, use_erg_lyric=True, use_erg_diffusion=True,
-                oss_steps="",
-                guidance_scale_text=0.0, guidance_scale_lyric=0.0,
-                save_path=str(tmp / "out.wav"),
-                batch_size=1,                      # always 1 on low VRAM
-            )
-            # Diffusion steps are not interruptible mid-call; cancel lands between segments.
-            self._pipe(**_filter_kwargs(self._pipe.__call__, call))
-            progress(1.0)
-            wavs = sorted(tmp.glob("*.wav"))
-            if not wavs:
-                raise RuntimeError("ACE-Step produced no audio")
-            data, sr = sf.read(str(wavs[0]), dtype="float32", always_2d=True)
-            return SegmentResult(np.ascontiguousarray(data), int(sr))
+            if req.context_audio is not None and len(req.context_audio):
+                try:
+                    return self._run(req, tmp, progress, extend=True)
+                except Cancelled:
+                    raise
+                except Exception as e:  # experimental path: never lose the song over it
+                    log.warning("extend-from-previous failed (%s); generating this segment independently", e)
+            return self._run(req, tmp, progress, extend=False)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def _run(self, req: SegmentRequest, tmp: Path, progress, extend: bool) -> SegmentResult:
+        import soundfile as sf
+
+        call = dict(
+            audio_duration=float(req.duration),
+            prompt=req.prompt,
+            lyrics=req.lyrics or "[instrumental]",
+            infer_step=req.steps or 60,
+            guidance_scale=15.0,
+            scheduler_type="euler",
+            cfg_type="apg",
+            omega_scale=10.0,
+            manual_seeds=str(req.seed),
+            guidance_interval=0.5,
+            guidance_interval_decay=0.0,
+            min_guidance_scale=3.0,
+            use_erg_tag=True, use_erg_lyric=True, use_erg_diffusion=True,
+            oss_steps="",
+            guidance_scale_text=0.0, guidance_scale_lyric=0.0,
+            save_path=str(tmp / "out.wav"),
+            batch_size=1,                      # always 1 on low VRAM
+        )
+        ctx_len = 0.0
+        if extend:
+            # Condition on the end of the previous segment so the music continues instead of restarting.
+            ctx = tmp / "context.wav"
+            sf.write(str(ctx), req.context_audio, req.context_sr)
+            ctx_len = len(req.context_audio) / req.context_sr
+            call.update(task="extend", src_audio_path=str(ctx), repaint_start=ctx_len,
+                        repaint_end=ctx_len + req.duration, audio_duration=ctx_len + req.duration)
+        # Diffusion steps are not interruptible mid-call; cancel lands between segments.
+        self._pipe(**_filter_kwargs(self._pipe.__call__, call))
+        progress(1.0)
+        wavs = [w for w in sorted(tmp.glob("*.wav")) if w.name != "context.wav"]
+        if not wavs:
+            raise RuntimeError("ACE-Step produced no audio")
+        data, sr = sf.read(str(wavs[0]), dtype="float32", always_2d=True)
+        if extend:
+            data = data[int(ctx_len * sr):]    # drop the context we fed in; keep only the new part
+        return SegmentResult(np.ascontiguousarray(data), int(sr))
 
     def unload(self) -> None:
         self._pipe = None

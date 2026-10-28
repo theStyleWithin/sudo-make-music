@@ -46,16 +46,23 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 | Mode | chunk | max song | offload | int8 |
 |---|---|---|---|---|
-| Safe (default <8GB VRAM) | 60s | 10 min | on | on |
-| Balanced (8–12GB) | 120s | 8 min | on | off |
-| Quality (≥12GB) | 240s | 5 min | off | off |
+| Safe (default <8GB VRAM) | 60s | 30 min | on | on |
+| Balanced (8–12GB) | 120s | 20 min | on | off |
+| Quality (≥12GB) | 240s | 15 min | off | off |
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
+
+## Local, offline, swappable models
+
+- Every model is a plain folder in `<data>/models/<name>/` (Linux: `~/.local/share/sudo-make-music/models`, Windows portable: next to the exe) with a small `smm-model.json` (`{"backend": "acestep", "name": "..."}`).
+- **Settings > Models:** import a folder from anywhere (USB stick, another drive), pick which one a backend uses, delete it. Swap ACE-Step checkpoints or fine-tunes without touching code; new model *families* are added as backends (`backends/base.py`).
+- **Offline mode** (Settings): sets `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE` and refuses to start a job without a local model, so nothing can touch the network.
+- **Longer songs:** the length limit is time, not memory (audio streams to disk). Safe mode allows 30 min on 6GB. For better coherence across chunks, turn on *Continue each chunk from the previous one*: the last ~10s of the previous chunk is passed as context (ACE-Step "extend" task; falls back to independent chunks if it fails). Experimental and untested on real hardware.
 
 ## Known limitations (be aware)
 
 - **Untested on real hardware.** The pipeline, stitching, UI, export, history and cancellation are covered by tests using the mock backend. The ACE-Step adapter is written against its public `ACEStepPipeline` API but was developed without a GPU; expect to tune it on your 2060 (bf16 is emulated on Turing — if it is slow or errors, report back; fp16 may be needed).
-- **Chunked songs are independent generations** with the same prompt and consecutive seeds, joined by a crossfade. Long songs won't have a coherent arrangement/structure across chunks, and lyrics are repeated per chunk. Using ACE-Step's repaint/extend to condition each chunk on the previous one is the main planned improvement.
+- **Chunked songs are independent generations by default** (same prompt, consecutive seeds, crossfaded), so long songs lack a coherent arrangement and lyrics repeat per chunk. The experimental continuity switch above is meant to improve this; it is unverified.
 - INT8 quantization uses `torchao` on the transformer and falls back (with a log message) if it can't.
 - Cancel takes effect between segments; a diffusion call in progress can't be interrupted.
 
