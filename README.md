@@ -10,7 +10,7 @@ python -m venv .venv && source .venv/bin/activate
 # 1. torch for your CUDA (https://pytorch.org/get-started/locally/), e.g.:
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 # 2. the app + default backend (+ optional int8 quantization, mp3 fallback)
-pip install -e '.[acestep,quant,mp3]'
+pip install -e '.[acestep,quant]'
 sudo-make-music            # opens the desktop window
 ```
 

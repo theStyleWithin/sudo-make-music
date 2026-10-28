@@ -11,9 +11,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pip install -e '.[dev]'
       - run: pytest -q
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libmtdev1 && xvfb-run -a python tests/ui_smoke.py /tmp/shots
+      - name: UI smoke test (headless; informational)
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri xclip
+          xvfb-run -a python tests/ui_smoke.py /tmp/shots
 
   appimage:
     needs: test

@@ -8,14 +8,17 @@ version = "1.0.0"
 description = "Offline AI music generation for mid-range PCs (6GB VRAM friendly)"
 requires-python = ">=3.10"
 license = { text = "Unlicense" }
-dependencies = ["numpy>=1.24", "kivy>=2.3"]
+dependencies = [
+  "numpy>=1.24",
+  "kivy>=2.3",
+  "lameenc>=1.7; sys_platform != 'android'",   # built-in MP3 encoder: no ffmpeg needed
+]
 
 [project.optional-dependencies]
 # Real backend. Install torch for your CUDA first (see README).
 acestep = ["torch", "torchaudio", "soundfile", "ace-step @ git+https://github.com/ace-step/ACE-Step.git"]
 quant = ["torchao"]
 speech = ["kokoro", "chatterbox-tts", "soundfile"]
-mp3 = ["lameenc"]
 windows = ["kivy[base]>=2.3"]
 dev = ["pytest"]
 

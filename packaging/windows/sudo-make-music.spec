@@ -5,7 +5,7 @@ from kivy.tools.packaging.pyinstaller_hooks import get_deps_minimal, hookspath, 
 
 kv = get_deps_minimal(video=None, camera=None, spelling=None)
 a = Analysis(["packaging/windows/launcher.py"], pathex=["."], datas=[],
-             hiddenimports=kv["hiddenimports"] + ["sudo_make_music.ui.app", "pip"],
+             hiddenimports=kv["hiddenimports"] + ["sudo_make_music.ui.app", "pip", "lameenc"],
              excludes=kv["excludes"], hookspath=hookspath(), runtime_hooks=runtime_hooks())
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.zipfiles, a.datas,

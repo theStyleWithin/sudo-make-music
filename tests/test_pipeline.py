@@ -89,6 +89,9 @@ def test_unavailable_backend_rejected(engine):
 
 
 def test_mp3_export(engine):
+    import importlib.util, shutil
+    if not (shutil.which("ffmpeg") or importlib.util.find_spec("lameenc")):
+        pytest.skip("no MP3 encoder (ffmpeg or lameenc) available")
     engine.store.value.output_format = "mp3"
     job = wait(engine, engine.submit("test", "", 10))
     assert job.status == "done", job.error
