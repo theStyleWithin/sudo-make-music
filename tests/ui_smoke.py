@@ -44,7 +44,12 @@ def step(dt):
                                        "ask_on_fallback": False})
         r.refresh_status()
         r.ids.prompt.text, r.ids.dur.value = "lofi chill", 20
-        r.generate()
+        r.ids.magic.text = "make something"                       # wrong phrase: must NOT start a job
+        r.ids.magic.dispatch("on_text_validate")
+        expect(not r.busy and r.is_error, "wrong phrase rejected")
+        r.ids.magic.text = "sudo make music"                      # right phrase + Enter: starts generating
+        r.ids.magic.dispatch("on_text_validate")
+        expect(r.busy and r.ids.magic.text == "", "command starts generation")
     elif ph == "song" and not r.busy and r.result_id:
         print("SONG", r.message)
         shot("song_done")

@@ -17,6 +17,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.utils import platform
 
 from .. import memory, runtime
+from ..command import COMMAND, allowed_input, is_command
 from ..engine import Engine
 
 KV = r"""
@@ -127,6 +128,17 @@ KV = r"""
                             hint_text: '[verse]\n...'
                             background_color: 0.11, 0.12, 0.15, 1
                             foreground_color: 0.91, 0.91, 0.93, 1
+                        Cap:
+                            text: 'Type  sudo make music  and press Enter to generate'
+                        Field:
+                            id: magic
+                            hint_text: 'sudo make music'
+                            height: dp(34)
+                            font_size: '13sp'
+                            padding: dp(10), dp(7)
+                            write_tab: False
+                            text_validate_unfocus: False
+                            on_text_validate: root.command_entered(self)
                         Cap:
                             text: 'Duration: %d:%02d' % (dur.value // 60, dur.value % 60)
                         Slider:
@@ -499,6 +511,7 @@ class Root(BoxLayout):
 
     # ---- setup / refresh -------------------------------------------------
     def _init_ui(self):
+        self.ids.magic.input_filter = lambda s, undo: allowed_input(s)   # letters + spaces only
         if platform == "android":
             self.ids.install_box.height = 0
             self.ids.install_box.opacity = 0
@@ -882,6 +895,17 @@ class Root(BoxLayout):
         self.result_id = ""
         self.busy, self.progress = True, 0
         self._say("re-voicing…")
+
+    def command_entered(self, box):
+        """Enter pressed in the command box. The text is only compared with the phrase, never executed."""
+        if is_command(box.text):
+            if self.busy:
+                return self._say("Already generating - wait for it to finish or press Cancel.", True)
+            box.text = ""
+            self.generate()
+        else:
+            self._say(f'This box only accepts the phrase "{COMMAND}" (then Enter).', True)
+        box.focus = True
 
     def set_mode(self, m):
         self.mode = m
