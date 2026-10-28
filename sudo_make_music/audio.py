@@ -29,6 +29,44 @@ class WavWriter:
         self._w.close()
 
 
+def read_wav(path: Path) -> tuple[np.ndarray, int]:
+    """16-bit PCM WAV -> float32 (samples, channels), sample rate."""
+    with wave.open(str(path), "rb") as w:
+        if w.getsampwidth() != 2:
+            raise ValueError("only 16-bit PCM WAV is supported here")
+        ch, sr = w.getnchannels(), w.getframerate()
+        data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+    return data.reshape(-1, ch), sr
+
+
+def write_wav(path: Path, audio: np.ndarray, sr: int) -> None:
+    audio = audio.reshape(len(audio), -1)
+    w = WavWriter(path, sr, audio.shape[1])
+    w.write(audio)
+    w.close()
+
+
+def to_wav_16bit(src: Path, dst: Path, mono: bool = True, max_seconds: float | None = None) -> None:
+    """Convert any audio file to 16-bit WAV via ffmpeg (WAV input works without it)."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(src)]
+        if max_seconds:
+            cmd += ["-t", str(max_seconds)]
+        cmd += (["-ac", "1"] if mono else []) + ["-c:a", "pcm_s16le", str(dst)]
+        subprocess.run(cmd, check=True)
+        return
+    try:
+        audio, sr = read_wav(src)
+    except Exception as e:
+        raise RuntimeError("this file needs ffmpeg to read (only 16-bit WAV works without it)") from e
+    if mono:
+        audio = audio.mean(axis=1, keepdims=True)
+    if max_seconds:
+        audio = audio[: int(max_seconds * sr)]
+    write_wav(dst, audio, sr)
+
+
 def plan_segments(total: float, chunk: float, overlap: float) -> list[float]:
     """Equal-length segments, each <= chunk, whose crossfaded union is `total` seconds."""
     if total <= chunk:

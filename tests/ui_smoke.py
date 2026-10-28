@@ -1,9 +1,8 @@
 """Headless UI smoke test: run with  xvfb-run -a python tests/ui_smoke.py <outdir>
-Drives the real Kivy window with the mock backend and saves screenshots."""
+Drives the real Kivy window with the mock backends and saves screenshots."""
 import os
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 out = Path(sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp())
@@ -21,35 +20,73 @@ from kivy.core.window import Window
 from sudo_make_music.ui.app import SudoMakeMusicApp
 
 app = SudoMakeMusicApp()
-steps = []
+state = {"n": 0, "phase": "song"}
+fail = []
 
 
 def shot(name):
     Window.screenshot(name=str(out / f"{name}.png"))
 
 
+def expect(cond, msg):
+    if not cond:
+        fail.append(msg)
+        print("FAIL", msg)
+
+
 def step(dt):
     r = app.root_widget
-    s = len(steps)
-    steps.append(1)
-    if s == 0:
-        app.engine.store.value.update({"backend": "mock", "ask_on_fallback": False})
+    state["n"] += 1
+    ph = state["phase"]
+    if ph == "song" and state["n"] == 1:
+        app.engine.store.value.update({"backend": "mock", "speech_backend": "mock_speech", "ask_on_fallback": False})
         r.refresh_status()
-        r.ids.prompt.text = "lofi chill"
-        r.ids.dur.value = 20
+        r.ids.prompt.text, r.ids.dur.value = "lofi chill", 20
         r.generate()
-    elif s > 0 and r.busy:
-        return
-    elif r.result_id and "done" not in steps:
-        steps.append("done")
-        print("RESULT", r.message, r.result_id)
-        Clock.schedule_once(lambda d: (shot("create_done"), r.show("library")), 0.3)
-        Clock.schedule_once(lambda d: (shot("library"), r.show("settings")), 0.8)
-        Clock.schedule_once(lambda d: (shot("settings"), app.stop()), 1.3)
-    elif not r.busy and s > 3 and "done" not in steps:
-        print("FAILED", r.message)
+    elif ph == "song" and not r.busy and r.result_id:
+        print("SONG", r.message)
+        shot("song_done")
+        song = r.result_id
+        r.save_voice_dialog(song)                     # open the form, then fill and submit it like a user
+        pop = [w for w in Window.children if w.__class__.__name__ == "Popup"][0]
+        shot("save_voice_form")
+        pop.dismiss()
+        r.engine.save_voice_from_job(song, "Singer A", 1, 8, "warm alto")
+        r.refresh_voices()
+        expect(len(r.engine.voices.list()) == 1, "voice saved")
+        expect(len(r.engine.history.list()) == 1, "songs untouched")
+        r.show("voices")
+        state["phase"] = "voices"
+        state["n"] = 0
+        r.result_id = ""
+    elif ph == "voices" and state["n"] == 2:
+        shot("voices")
+        vid = r.engine.voices.list()[0].id
+        r.use_voice(vid, "talk")
+        expect(r.mode == "talk" and r.selected_voice_id() == vid, "voice selected for talk")
+        r.ids.talk_text.text = "Hello there. This is my saved voice speaking."
+        r.generate()
+        state["phase"] = "talk"
+        state["n"] = 0
+    elif ph == "talk" and not r.busy and state["n"] > 2 and r.result_id:
+        print("TALK", r.message, r.result_kind)
+        expect(r.result_kind == "talk", "talk result")
+        shot("talk_done")
+        r.show("library")
+        state["phase"] = "end"
+        state["n"] = 0
+    elif ph == "end" and state["n"] == 2:
+        shot("library")
+        r.show("settings")
+    elif ph == "end" and state["n"] == 4:
+        shot("settings")
+        print("RESULT", "FAIL" if fail else "OK")
+        app.stop()
+    elif state["n"] > 60:
+        print("TIMEOUT", ph, r.message)
         app.stop()
 
 
 Clock.schedule_interval(step, 0.5)
 app.run()
+sys.exit(1 if fail else 0)

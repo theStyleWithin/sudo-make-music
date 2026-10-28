@@ -10,14 +10,18 @@ import sys
 import threading
 import time
 import uuid
+
+import numpy as np
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import hardware, memory, paths
-from .audio import WavWriter, Stitcher, plan_segments, export_mp3
-from .backends import registry, SegmentRequest, Cancelled
+from .audio import WavWriter, Stitcher, plan_segments, export_mp3, read_wav
+from .backends import registry, SegmentRequest, SpeechRequest, Cancelled
 from .history import History
 from .models import ModelStore
+from .textsplit import split_text
+from .voices import VoiceStore
 from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
@@ -35,6 +39,10 @@ class Job:
     steps: int
     fmt: str
     continuity: bool = False
+    kind: str = "song"                      # song | talk
+    voice_id: str | None = None
+    speed: float = 1.0
+    voice_tags: str = ""
     decision: dict | None = None            # pending hardware warning shown to the user
     choice: str | None = None
     decided: threading.Event = field(default_factory=threading.Event)
@@ -52,7 +60,8 @@ class Job:
         return dict(id=self.id, status=self.status, progress=self.progress, message=self.message,
                     segment=self.segment, segments=self.segments, error=self.error,
                     duration=self.duration, seed=self.seed, backend=self.backend,
-                    mode=self.params.mode, params=self.params.to_dict(), decision=self.decision)
+                    mode=self.params.mode, params=self.params.to_dict(), decision=self.decision,
+                    kind=self.kind, voice_id=self.voice_id)
 
 
 class Engine:
@@ -61,6 +70,7 @@ class Engine:
         self.history = history or History()
         self.hw = hardware.detect()
         self.models = ModelStore()
+        self.voices = VoiceStore()
         self._hid_cuda = False
         self._set_device_env(self.active_params().device)
         self.jobs: dict[str, Job] = {}
@@ -99,7 +109,7 @@ class Engine:
                     model_loaded=any(b.loaded for b in self._backends.values()),
                     free_vram_mb=hardware.free_vram_mb(),
                     models=[m.to_dict() for m in self.models.list()],
-                    selected_models=self.store.value.models,
+                    selected_models=self.store.value.models, speech_backend=self.store.value.speech_backend,
                     offline_mode=self.store.value.offline_mode)
 
     # ---- models --------------------------------------------------------
@@ -149,7 +159,7 @@ class Engine:
                 os.environ.pop(k, None)
 
     # ---- submit / cancel -----------------------------------------------
-    def submit(self, prompt: str, lyrics: str, duration: int) -> Job:
+    def submit(self, prompt: str, lyrics: str, duration: int, voice_id: str | None = None) -> Job:
         s = self.store.value
         params = self.active_params()
         backend = self._backend(s.backend)
@@ -158,15 +168,58 @@ class Engine:
             raise RuntimeError(why)
         if not prompt.strip():
             raise ValueError("style prompt is required")
+        voice = self.voices.get(voice_id) if voice_id else None
+        if voice_id and not voice:
+            raise ValueError("that voice no longer exists")
         self.resolve_model(backend)   # fail fast (e.g. offline mode with no local model)
         duration = int(min(max(5, duration), params.max_duration))
-        seed = s.seed if s.seed is not None else random.randint(0, 2**31 - 1)
+        # A saved voice makes the result repeatable: its seed is reused unless the user pinned another one.
+        seed = s.seed if s.seed is not None else (voice.seed if voice and voice.seed is not None
+                                                   else random.randint(0, 2**31 - 1))
         job = Job(id=uuid.uuid4().hex[:12], prompt=prompt.strip(), lyrics=lyrics.strip(),
                   duration=duration, seed=seed, backend=s.backend, params=params,
-                  steps=s.steps, fmt=s.output_format, continuity=s.continuity and backend.supports_context)
+                  steps=s.steps, fmt=s.output_format, continuity=s.continuity and backend.supports_context,
+                  voice_id=voice.id if voice else None, voice_tags=voice.tags if voice else "")
         self.jobs[job.id] = job
         self._q.put(job)
         return job
+
+    def submit_talk(self, text: str, voice_id: str | None = None, speed: float = 1.0) -> Job:
+        """Talk mode: speak typed text in a saved voice (cloned reference clip or built-in preset)."""
+        s = self.store.value
+        backend = self._backend(s.speech_backend)
+        if backend.kind != "speech":
+            raise ValueError(f"{backend.name} is not a speech backend")
+        ok, why = backend.available()
+        if not ok:
+            raise RuntimeError(why)
+        if not text.strip():
+            raise ValueError("type something for the voice to say")
+        voice = self.voices.get(voice_id) if voice_id else None
+        if voice_id and not voice:
+            raise ValueError("that voice no longer exists")
+        if voice and voice.has_ref and not backend.supports_cloning and not voice.preset:
+            raise ValueError(f"{backend.name} cannot clone voices. Switch the speech backend in Settings "
+                             "or pick a preset voice.")
+        if voice and voice.preset and voice.preset not in backend.preset_voices and not voice.has_ref:
+            raise ValueError(f"preset '{voice.preset}' does not exist in {backend.name}; pick another voice or backend")
+        self.resolve_model(backend)
+        seed = s.seed if s.seed is not None else random.randint(0, 2**31 - 1)
+        job = Job(id=uuid.uuid4().hex[:12], prompt=text.strip(), lyrics="", duration=0, seed=seed,
+                  backend=s.speech_backend, params=self.active_params(), steps=0, fmt=s.output_format,
+                  kind="talk", voice_id=voice.id if voice else None, speed=min(2.0, max(0.5, float(speed))))
+        self.jobs[job.id] = job
+        self._q.put(job)
+        return job
+
+    def save_voice_from_job(self, job_id: str, name: str, start: float = 0.0, length: float = 15.0, tags: str = ""):
+        """Keep the voice of a generated song in the (separate) voice library."""
+        row = self.history.get(job_id)
+        wav = paths.outputs_dir() / f"{job_id}.wav"
+        if not row or not wav.is_file() or (row.get("kind") or "song") != "song":
+            raise ValueError("that song is not available")
+        return self.voices.create_from_song(wav, name, start, length, tags, seed=row["seed"],
+                                            origin_prompt=row["prompt"])
 
     def cancel(self, job_id: str) -> bool:
         job = self.jobs.get(job_id)
@@ -188,69 +241,123 @@ class Engine:
 
     def _run(self, job: Job) -> None:
         if job.cancel.is_set():
+            self._record(job, "cancelled")
             job.status = "cancelled"
-            self._record(job)
             return
         job.status, job.started = "running", time.time()
         wav = paths.outputs_dir() / f"{job.id}.wav"
-        writer = None
+        hold: dict = {}
         try:
             backend = self._backend(job.backend)
             self._preflight_device(job, backend)
-            chunk = min(job.params.chunk_seconds, backend.max_segment_seconds)
-            overlap = min(job.params.overlap_seconds, chunk / 2 - 0.5) if chunk > 1 else 0
-            plan = plan_segments(job.duration, chunk, max(0.0, overlap))
-            job.segments = len(plan)
             job.message = "loading model"
             if job.params.device == "cpu" and backend.uses_gpu and not backend.can_switch_device_live and self._cuda_initialised():
                 raise RuntimeError("CPU was selected after the GPU was already in use. Restart the app to run on CPU.")
             self._set_device_env(job.params.device)
             self._apply_offline(self.store.value.offline_mode)
             model_path = self.resolve_model(backend)
+            self._unload_others(backend)      # one model in memory at a time (VRAM!)
             self._with_fallback(job, backend, lambda: backend.load(job.params, model_path), model_path)
-            stitcher = None
-            ctx_tail, ctx_sr = None, 0
-            for i, dur in enumerate(plan):
-                if job.cancel.is_set():
-                    raise Cancelled()
-                job.segment = i + 1
-                job.message = f"segment {i + 1}/{len(plan)}"
-                base = i / len(plan)
-
-                def prog(f, base=base):
-                    job.progress = base + f / len(plan)
-
-                req = SegmentRequest(prompt=job.prompt, lyrics=job.lyrics, duration=dur,
-                                     seed=job.seed + i, index=i, total=len(plan), steps=job.steps,
-                                     context_audio=ctx_tail, context_sr=ctx_sr)
-                res = self._with_fallback(job, backend, lambda: backend.generate_segment(
-                    req, job.params, prog, job.cancel.is_set), model_path)
-                if stitcher is None:
-                    writer = WavWriter(wav, res.sample_rate, res.audio.shape[1])
-                    stitcher = Stitcher(writer, max(0.0, overlap))
-                stitcher.add(res.audio, res.sample_rate)  # streamed to disk
-                if job.continuity:   # keep only ~10s of the previous segment as context
-                    n = int(10 * res.sample_rate)
-                    ctx_tail, ctx_sr = res.audio[-n:].copy(), res.sample_rate
-                del res
-                self._clear_cuda()
-            stitcher.finish()
-            writer = None
+            if job.kind == "talk":
+                self._make_speech(job, backend, model_path, wav, hold)
+            else:
+                self._make_song(job, backend, model_path, wav, hold)
             if job.fmt == "mp3":
                 job.message = "encoding mp3"
                 export_mp3(wav, wav.with_suffix(".mp3"))
-            job.status, job.progress, job.message = "done", 1.0, "done"
+            job.progress, job.message = 1.0, "done"
+            outcome = "done"
         except Cancelled:
-            job.status, job.message = "cancelled", "cancelled"
-            self._discard(wav, writer)
+            job.message, outcome = "cancelled", "cancelled"
+            self._discard(wav, hold.get("writer"))
         except Exception as e:  # includes CUDA OOM
             log.exception("job failed")
-            job.status, job.error = "error", self._explain(e, job)
-            self._discard(wav, writer)
-        finally:
-            job.finished = time.time()
+            job.error, outcome = self._explain(e, job), "error"
+            self._discard(wav, hold.get("writer"))
+        job.finished = time.time()
+        self._clear_cuda()
+        self._record(job, outcome)       # history row first ...
+        job.status = outcome             # ... then expose the final status (callers may use the row at once)
+
+    def _unload_others(self, keep) -> None:
+        for b in self._backends.values():
+            if b is not keep and b.loaded:
+                b.unload()
+        self._clear_cuda()
+
+    def _make_song(self, job: Job, backend, model_path, wav, hold: dict) -> None:
+        chunk = min(job.params.chunk_seconds, backend.max_segment_seconds)
+        overlap = max(0.0, min(job.params.overlap_seconds, chunk / 2 - 0.5) if chunk > 1 else 0)
+        plan = plan_segments(job.duration, chunk, overlap)
+        job.segments = len(plan)
+        prompt = f"{job.voice_tags}, {job.prompt}" if job.voice_tags else job.prompt
+        voice_ctx = None                 # saved voice: its reference clip conditions every chunk (best effort)
+        if job.voice_id and backend.supports_context:
+            ref = self.voices.ref_audio(job.voice_id)
+            if ref is not None:
+                a, sr = ref
+                voice_ctx = (np.repeat(a[: int(10 * sr)], 2, axis=1) if a.shape[1] == 1 else a[: int(10 * sr)], sr)
+        stitcher = None
+        prev_tail, prev_sr = None, 0
+        for i, dur in enumerate(plan):
+            if job.cancel.is_set():
+                raise Cancelled()
+            job.segment = i + 1
+            job.message = f"segment {i + 1}/{len(plan)}"
+            base = i / len(plan)
+
+            def prog(f, base=base):
+                job.progress = base + f / len(plan)
+
+            ctx, ctx_sr = (prev_tail, prev_sr) if prev_tail is not None else (voice_ctx or (None, 0))
+            req = SegmentRequest(prompt=prompt, lyrics=job.lyrics, duration=dur,
+                                 seed=job.seed + i, index=i, total=len(plan), steps=job.steps,
+                                 context_audio=ctx, context_sr=ctx_sr)
+            res = self._with_fallback(job, backend, lambda: backend.generate_segment(
+                req, job.params, prog, job.cancel.is_set), model_path)
+            if stitcher is None:
+                hold["writer"] = WavWriter(wav, res.sample_rate, res.audio.shape[1])
+                stitcher = Stitcher(hold["writer"], overlap)
+            stitcher.add(res.audio, res.sample_rate)  # streamed to disk
+            if job.continuity:   # keep only ~10s of the previous segment as context
+                n = int(10 * res.sample_rate)
+                prev_tail, prev_sr = res.audio[-n:].copy(), res.sample_rate
+            del res
             self._clear_cuda()
-            self._record(job)
+        stitcher.finish()
+        hold["writer"] = None
+
+    def _make_speech(self, job: Job, backend, model_path, wav, hold: dict) -> None:
+        chunks = split_text(job.prompt)
+        if not chunks:
+            raise ValueError("nothing to say")
+        job.segments = len(chunks)
+        voice = self.voices.get(job.voice_id) if job.voice_id else None
+        ref = self.voices.ref_path(voice.id) if voice and voice.has_ref and backend.supports_cloning else None
+        preset = (voice.preset if voice and voice.preset else None) or (backend.preset_voices[0] if backend.preset_voices else None)
+        writer = None
+        for i, text in enumerate(chunks):
+            if job.cancel.is_set():
+                raise Cancelled()
+            job.segment, job.message = i + 1, f"sentence {i + 1}/{len(chunks)}"
+            base = i / len(chunks)
+
+            def prog(f, base=base):
+                job.progress = base + f / len(chunks)
+
+            req = SpeechRequest(text=text, voice_ref_path=ref, preset=preset, speed=job.speed,
+                                seed=job.seed + i, index=i, total=len(chunks))
+            res = self._with_fallback(job, backend, lambda: backend.synthesize(
+                req, job.params, prog, job.cancel.is_set), model_path)
+            if writer is None:
+                writer = hold["writer"] = WavWriter(wav, res.sample_rate, res.audio.shape[1])
+            writer.write(res.audio)
+            if i < len(chunks) - 1:   # short natural pause between sentences
+                writer.write(np.zeros((int(0.3 * res.sample_rate), res.audio.shape[1]), dtype=np.float32))
+            del res
+            self._clear_cuda()
+        writer.close()
+        hold["writer"] = None
 
     def _set_device_env(self, device: str) -> None:
         """Hide CUDA for CPU runs (only possible before CUDA initialises); unhide if we hid it."""
@@ -362,10 +469,10 @@ class Engine:
                     "the app (uses system RAM, slow), or lower the chunk length.")
         return msg
 
-    def _record(self, job: Job) -> None:
+    def _record(self, job: Job, status: str | None = None) -> None:
         self.history.add(id=job.id, backend=job.backend, prompt=job.prompt, lyrics=job.lyrics,
                          duration=job.duration, seed=job.seed, mode=job.params.mode,
-                         status=job.status, error=job.error,
+                         status=status or job.status, error=job.error, kind=job.kind, voice_id=job.voice_id,
                          elapsed=(job.finished - job.started) if job.started else 0,
                          params={**job.params.to_dict(), "steps": job.steps, "format": job.fmt})
 

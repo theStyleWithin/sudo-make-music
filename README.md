@@ -52,6 +52,20 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
 
+## Voices: voice library, talk mode, cloning
+
+- **Create > Talk:** type text and have a voice speak it (not sing). Long text is split into sentences, synthesized one at a time and streamed to disk.
+- **Voice library (Voices tab)** is separate from your songs. A voice is a name, a short reference clip, tags and (for song voices) the seed it came from.
+  - After generating a song press **Save voice**: pick the part of the song with the singing (start + length, up to 30s) and optionally describe it ("female vocal, warm alto").
+  - **Clone a voice** from any audio file (5-30s of ONE speaker, clean recording works best; WAV works anywhere, other formats need ffmpeg). Everything stays on your machine.
+  - **Add preset voice** saves a built-in voice of the speech backend (e.g. Kokoro's `af_heart`).
+  - Pick a saved voice in the **Voice** box on Create (or press *Use in song* / *Use in talk*). Deleting a song never deletes its saved voice.
+- **Songs with a saved voice:** the voice's seed is reused (so it is no longer random unless you pin another seed in Settings), its description is added to the prompt, and its reference clip is fed to the music model as context for every chunk. Music models have no real "voice ID", so this is *best-effort similarity*, not a guaranteed identical singer (and only for backends with context support, i.e. ACE-Step's experimental extend mode). Exact singing-voice cloning would need a separate voice-conversion model, which is not included.
+- **Cloning engines (swappable, offline after one download):** `chatterbox` (MIT, clones from a reference clip, a few GB VRAM, falls back to CPU) and `kokoro` (tiny, preset voices only, no cloning). Install with Settings > *Install voice libraries* or `sudo-make-music --install-backend cu126 --with-speech`. Add other engines as `SpeechBackend`s (`backends/speech.py`). Only one model sits in memory at a time (the music model is unloaded before the voice model loads).
+- **Use voice cloning responsibly:** only clone voices you own or have permission to use.
+- A voice saved from a *song* is a poor reference for talk mode (music bleeds in); clone talk voices from a clean recording.
+- **Not verified:** the Kokoro and Chatterbox adapters were written against their public APIs but never run (no model downloads possible where this was built). The library, talk pipeline, UI and mock voices are tested.
+
 ## Choosing the resource (GPU vs CPU + system RAM)
 
 - **You choose:** the Create screen has a *Resource* selector (Auto / GPU / CPU + system RAM); Settings has the same plus the warning switch below. Restart the app after switching if the GPU was already used this session (PyTorch limitation with ACE-Step).

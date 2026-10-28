@@ -35,6 +35,18 @@ class SegmentResult:
     sample_rate: int
 
 
+@dataclass
+class SpeechRequest:
+    text: str
+    voice_ref_path: Path | None = None   # mono 16-bit WAV of the voice to clone (cloning backends)
+    preset: str | None = None            # built-in voice name (preset backends)
+    language: str = "en"
+    speed: float = 1.0
+    seed: int = 0
+    index: int = 0
+    total: int = 1
+
+
 ProgressFn = Callable[[float], None]   # 0..1 within the segment
 CancelFn = Callable[[], bool]
 
@@ -81,13 +93,33 @@ class ModelBackend(ABC):
     def loaded(self) -> bool:
         return False
 
+    kind: str = "music"              # music | speech
+    supports_cloning: bool = False   # speech: can imitate a reference clip
+    preset_voices: tuple = ()        # speech: built-in voice names
+
     def info(self) -> dict:
         ok, why = self.available()
         return dict(id=self.id, name=self.name, description=self.description,
                     available=ok, unavailable_reason=why,
                     max_segment_seconds=self.max_segment_seconds, needs_model=self.needs_model,
+                    kind=self.kind, supports_cloning=self.supports_cloning, preset_voices=list(self.preset_voices),
                     supports_context=self.supports_context,
                     min_vram_mb=self.min_vram_mb)
+
+
+class SpeechBackend(ModelBackend):
+    """Text-to-speech (talk mode). Same lifecycle as music backends; `synthesize` instead of generate_segment."""
+
+    kind = "speech"
+    max_segment_seconds = 40          # per text chunk of synthesized audio (not enforced for speech)
+
+    def generate_segment(self, req, params, progress, cancelled):  # pragma: no cover
+        raise NotImplementedError("speech backends use synthesize()")
+
+    @abstractmethod
+    def synthesize(self, req: SpeechRequest, params: GenParams, progress: ProgressFn,
+                   cancelled: CancelFn) -> SegmentResult:
+        """Speak `req.text` (one sentence-sized chunk) in the requested voice."""
 
 
 _REGISTRY: dict[str, type[ModelBackend]] = {}

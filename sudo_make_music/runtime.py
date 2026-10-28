@@ -35,16 +35,19 @@ def activate() -> None:
         site.addsitedir(str(d))
 
 
-def install_commands(cuda: str = "cu126") -> list[list[str]]:
+def install_commands(cuda: str = "cu126", speech: bool = False) -> list[list[str]]:
     if cuda not in TORCH_INDEXES:
         raise ValueError(f"cuda must be one of {sorted(TORCH_INDEXES)}")
     # Frozen (PyInstaller) exe has no `python -m`; the launcher understands --run-module instead.
     py = [sys.executable, "--run-module", "pip"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "pip"]
     base = py + ["install", "--upgrade", "--target", str(libs_dir())]
-    return [
+    cmds = [
         base + ["torch", "torchaudio", "--index-url", TORCH_INDEXES[cuda]],
         base + ["soundfile", "torchao", ACESTEP_SRC],
     ]
+    if speech:   # talk mode: Kokoro (presets) + Chatterbox (voice cloning). May re-pin torch versions.
+        cmds.append(base + ["kokoro", "chatterbox-tts", "soundfile"])
+    return cmds
 
 
 class Installer:
@@ -56,8 +59,8 @@ class Installer:
         self.ok: bool | None = None
         self.log: list[str] = []
 
-    def start(self, cuda: str = "cu126") -> None:
-        cmds = install_commands(cuda)
+    def start(self, cuda: str = "cu126", speech: bool = False) -> None:
+        cmds = install_commands(cuda, speech)
         with self.lock:
             if self.running:
                 raise RuntimeError("install already running")

@@ -47,6 +47,13 @@ KV = r"""
     background_color: 0.49, 0.61, 1, 1
     color: 0, 0, 0, 1
     bold: True
+<Tog@ToggleButton>:
+    size_hint_y: None
+    height: dp(44)
+    background_normal: ''
+    background_down: ''
+    background_color: (0.49, 0.61, 1, 1) if self.state == 'down' else (0.17, 0.18, 0.23, 1)
+    color: (0, 0, 0, 1) if self.state == 'down' else (0.91, 0.91, 0.93, 1)
 <Pick@Spinner>:
     size_hint_y: None
     height: dp(40)
@@ -81,35 +88,96 @@ KV = r"""
                     height: self.minimum_height
                     padding: dp(12)
                     spacing: dp(6)
-                    Cap:
-                        text: 'Style / genre / mood'
-                    Field:
-                        id: prompt
-                        hint_text: 'lo-fi hip hop, mellow, rainy night, piano'
-                    Cap:
-                        text: 'Lyrics (optional - empty = instrumental)'
-                    TextInput:
-                        id: lyrics
+                    BoxLayout:
                         size_hint_y: None
-                        height: dp(110)
-                        hint_text: '[verse]\n...'
-                        background_color: 0.11, 0.12, 0.15, 1
-                        foreground_color: 0.91, 0.91, 0.93, 1
-                    Cap:
-                        text: 'Duration: %d s' % dur.value
-                    Slider:
-                        id: dur
-                        min: 10
-                        max: root.max_duration
-                        value: 60
-                        step: 5
+                        height: dp(44)
+                        spacing: dp(8)
+                        Tog:
+                            id: tog_song
+                            text: 'Song'
+                            group: 'mode'
+                            state: 'down'
+                            allow_no_selection: False
+                            on_release: root.set_mode('song')
+                        Tog:
+                            id: tog_talk
+                            text: 'Talk'
+                            group: 'mode'
+                            allow_no_selection: False
+                            on_release: root.set_mode('talk')
+                    BoxLayout:
+                        id: song_box
+                        orientation: 'vertical'
                         size_hint_y: None
-                        height: dp(36)
+                        height: self.minimum_height if root.mode == 'song' else 0
+                        opacity: 1 if root.mode == 'song' else 0
+                        disabled: root.mode != 'song'
+                        spacing: dp(6)
+                        Cap:
+                            text: 'Style / genre / mood'
+                        Field:
+                            id: prompt
+                            hint_text: 'lo-fi hip hop, mellow, rainy night, piano'
+                        Cap:
+                            text: 'Lyrics (optional - empty = instrumental)'
+                        TextInput:
+                            id: lyrics
+                            size_hint_y: None
+                            height: dp(110)
+                            hint_text: '[verse]\n...'
+                            background_color: 0.11, 0.12, 0.15, 1
+                            foreground_color: 0.91, 0.91, 0.93, 1
+                        Cap:
+                            text: 'Duration: %d:%02d' % (dur.value // 60, dur.value % 60)
+                        Slider:
+                            id: dur
+                            min: 10
+                            max: root.max_duration
+                            value: 60
+                            step: 5
+                            size_hint_y: None
+                            height: dp(36)
+                        Cap:
+                            text: 'Music model backend'
+                        Pick:
+                            id: backend
+                            on_text: root.on_backend(self.text)
+                    BoxLayout:
+                        id: talk_box
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height if root.mode == 'talk' else 0
+                        opacity: 1 if root.mode == 'talk' else 0
+                        disabled: root.mode != 'talk'
+                        spacing: dp(6)
+                        Cap:
+                            text: 'What should the voice say?'
+                        TextInput:
+                            id: talk_text
+                            size_hint_y: None
+                            height: dp(150)
+                            hint_text: 'Type or paste the text to speak...'
+                            background_color: 0.11, 0.12, 0.15, 1
+                            foreground_color: 0.91, 0.91, 0.93, 1
+                        Cap:
+                            text: 'Speed: %.2fx' % speed.value
+                        Slider:
+                            id: speed
+                            min: 0.6
+                            max: 1.5
+                            value: 1.0
+                            step: 0.05
+                            size_hint_y: None
+                            height: dp(36)
+                        Cap:
+                            text: 'Speech backend'
+                        Pick:
+                            id: sbackend
+                            on_text: root.on_sbackend(self.text)
                     Cap:
-                        text: 'Model backend'
+                        text: 'Voice (from your voice library)'
                     Pick:
-                        id: backend
-                        on_text: root.on_backend(self.text)
+                        id: voice
                     Cap:
                         text: 'Resource: ' + root.device_note
                     Pick:
@@ -156,6 +224,44 @@ KV = r"""
                         Btn:
                             text: 'Save MP3'
                             on_release: root.save(root.result_id, 'mp3')
+                        Btn:
+                            text: 'Save voice'
+                            size_hint_x: 1 if root.result_kind == 'song' else 0
+                            opacity: 1 if root.result_kind == 'song' else 0
+                            disabled: root.result_kind != 'song'
+                            on_release: root.save_voice_dialog(root.result_id)
+        Screen:
+            name: 'voices'
+            ScrollView:
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(12)
+                    spacing: dp(8)
+                    Cap:
+                        text: 'Voice library - kept separate from your songs. Only clone voices you have the right to use.'
+                        height: dp(36)
+                    Btn:
+                        text: 'Clone a voice from an audio file...'
+                        on_release: root.pick_voice_file()
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44)
+                        spacing: dp(8)
+                        Pick:
+                            id: preset_pick
+                            size_hint_y: None
+                            height: dp(44)
+                        Btn:
+                            text: 'Add preset voice'
+                            on_release: root.add_preset()
+                    BoxLayout:
+                        id: voice_list
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(8)
         Screen:
             name: 'library'
             ScrollView:
@@ -227,7 +333,11 @@ KV = r"""
                         id: s_idle
                         input_filter: 'int'
                     Cap:
-                        text: 'Local models for the selected backend (stored on this device, used offline)'
+                        text: 'Speech backend (talk mode)'
+                    Pick:
+                        id: s_speech
+                    Cap:
+                        text: 'Local models (stored on this device, used offline)'
                     Pick:
                         id: s_model
                         on_text: root.on_model(self.text)
@@ -235,8 +345,14 @@ KV = r"""
                         size_hint_y: None
                         height: dp(44)
                         spacing: dp(8)
+                        Pick:
+                            id: s_imp
+                            values: ['as music model', 'as speech model']
+                            text: 'as music model'
+                            size_hint_y: None
+                            height: dp(44)
                         Btn:
-                            text: 'Import model folder...'
+                            text: 'Import folder...'
                             on_release: root.pick_folder()
                         Btn:
                             text: 'Delete selected'
@@ -300,6 +416,9 @@ KV = r"""
                         Btn:
                             text: 'Install PyTorch + ACE-Step'
                             on_release: root.install_backend(s_cuda.text)
+                        Btn:
+                            text: 'Install voice libraries (Kokoro, Chatterbox)'
+                            on_release: root.install_backend(s_cuda.text, True)
                         Label:
                             text: root.install_log
                             size_hint_y: None
@@ -315,6 +434,9 @@ KV = r"""
         Btn:
             text: 'Create'
             on_release: root.show('create')
+        Btn:
+            text: 'Voices'
+            on_release: root.show('voices')
         Btn:
             text: 'Library'
             on_release: root.show('library')
@@ -336,6 +458,8 @@ class Root(BoxLayout):
     effective = StringProperty("")
     install_log = StringProperty("")
     device_note = StringProperty("")
+    mode = StringProperty("song")          # song | talk
+    result_kind = StringProperty("")
 
     def __init__(self, engine: Engine, **kw):
         super().__init__(**kw)
@@ -366,14 +490,17 @@ class Root(BoxLayout):
                           f"offload {p['offload']}, int8 {p['quantize']}")
         self.device_note = {"cuda": "using GPU", "cpu": "using CPU + system RAM"}[st["device"]]
         avail = [b for b in st["backends"] if b["available"]]
-        names = {b["id"]: b["name"] for b in st["backends"]}
-        self._backend_by_name = {names[b["id"]] + ("" if b["available"] else " (not installed)"): b["id"]
-                                 for b in st["backends"]}
-        self.ids.backend.values = list(self._backend_by_name)
-        cur = self.engine.store.value.backend
-        for label, bid in self._backend_by_name.items():
-            if bid == cur:
-                self.ids.backend.text = label
+        def labels(kind):
+            return {b["name"] + ("" if b["available"] else " (not installed)"): b["id"]
+                    for b in st["backends"] if b["kind"] == kind}
+        self._backend_by_name, self._sbackend_by_name = labels("music"), labels("speech")
+        for spinner, table, cur in ((self.ids.backend, self._backend_by_name, self.engine.store.value.backend),
+                                    (self.ids.sbackend, self._sbackend_by_name, self.engine.store.value.speech_backend),
+                                    (self.ids.s_speech, self._sbackend_by_name, self.engine.store.value.speech_backend)):
+            spinner.values = list(table)
+            for label, bid in table.items():
+                if bid == cur:
+                    spinner.text = label
         self._avail = bool(avail)
 
     def on_backend(self, label):
@@ -382,6 +509,15 @@ class Root(BoxLayout):
             self.engine.store.value.update({"backend": bid})
             self.engine.store.save()
             self.refresh_models()
+
+    def on_sbackend(self, label):
+        bid = getattr(self, "_sbackend_by_name", {}).get(label)
+        if bid and bid != self.engine.store.value.speech_backend:
+            self.engine.store.value.update({"speech_backend": bid})
+            self.engine.store.save()
+            self.ids.s_speech.text = label
+            self.refresh_models()
+            self.refresh_voices()
 
     def load_settings(self):
         s, o = self.engine.store.value, self.engine.store.value.overrides
@@ -400,6 +536,7 @@ class Root(BoxLayout):
         i.s_warn.active = s.ask_on_fallback
         i.resource.text = {None: "Auto", "cuda": "GPU", "cpu": "CPU + system RAM"}[o.get("device")]
         self.refresh_models()
+        self.refresh_voices()
 
     def save_settings(self):
         i = self.ids
@@ -410,6 +547,7 @@ class Root(BoxLayout):
                 memory_mode=i.s_mode.text, seed=i.s_seed.text, steps=num(i.s_steps) or 60,
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
                 offline_mode=i.s_offline.active, continuity=i.s_cont.active, ask_on_fallback=i.s_warn.active,
+                speech_backend=getattr(self, "_sbackend_by_name", {}).get(i.s_speech.text, self.engine.store.value.speech_backend),
                 overrides=dict(max_duration=num(i.s_max), chunk_seconds=num(i.s_chunk),
                                overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q),
                                device={"auto": None, "gpu": "cuda", "cpu": "cpu"}[i.s_dev.text])))
@@ -466,20 +604,164 @@ class Root(BoxLayout):
             self._warn_popup.dismiss()
             self._warn_popup = None
 
+    # ---- voice library ---------------------------------------------------
+    NO_VOICE = "Random voice (none)"
+
+    def selected_voice_id(self):
+        return getattr(self, "_voice_by_label", {}).get(self.ids.voice.text)
+
+    def pick_voice(self, vid):
+        label = next((l for l, i in getattr(self, "_voice_by_label", {}).items() if i == vid), self.NO_VOICE)
+        self.ids.voice.text = label
+
+    def refresh_voices(self):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        voices = self.engine.voices.list()
+        prev = self.selected_voice_id()
+        self._voice_by_label = {}
+        for v in voices:
+            label = v.name + (" (cloned)" if v.source == "upload" else " (preset)" if v.preset and not v.has_ref else "")
+            while label in self._voice_by_label:
+                label += "'"
+            self._voice_by_label[label] = v.id
+        self.ids.voice.values = [self.NO_VOICE] + list(self._voice_by_label)
+        self.pick_voice(prev)
+        try:
+            self.ids.preset_pick.values = list(self.engine._backend(self.engine.store.value.speech_backend).preset_voices)
+            if self.ids.preset_pick.text not in self.ids.preset_pick.values and self.ids.preset_pick.values:
+                self.ids.preset_pick.text = self.ids.preset_pick.values[0]
+        except Exception:
+            pass
+        box = self.ids.voice_list
+        box.clear_widgets()
+        if not voices:
+            box.add_widget(Label(text="No saved voices yet. Save one after a song, or clone one from an audio file.",
+                                 size_hint_y=None, height=dp(60), text_size=(dp(300), None)))
+        for v in voices:
+            card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(100), spacing=dp(4))
+            title = Label(text=v.name, size_hint_y=None, height=dp(24), halign="left", shorten=True, bold=True)
+            title.bind(size=lambda w, sz: setattr(w, "text_size", sz))
+            how = {"song": "from a song", "upload": "cloned from audio", "preset": "preset"}[v.source]
+            meta = Label(text=" · ".join(x for x in (how, v.tags, f"{v.ref_seconds:.0f}s reference" if v.has_ref else "") if x),
+                         size_hint_y=None, height=dp(20), font_size="12sp", color=(0.55, 0.57, 0.64, 1),
+                         halign="left", shorten=True)
+            meta.bind(size=lambda w, sz: setattr(w, "text_size", sz))
+            btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(6))
+
+            def add(text, cb, enabled=True):
+                b = Factory.Btn(text=text, disabled=not enabled)
+                b.bind(on_release=lambda *_: cb())
+                btns.add_widget(b)
+            add("Hear", lambda i=v.id: self.play_file(self.engine.voices.ref_path(i)), v.has_ref)
+            add("Use in song", lambda i=v.id: self.use_voice(i, "song"))
+            add("Use in talk", lambda i=v.id: self.use_voice(i, "talk"))
+            add("Delete", lambda i=v.id: self.delete_voice(i))
+            for w in (title, meta, btns):
+                card.add_widget(w)
+            box.add_widget(card)
+
+    def use_voice(self, vid, mode):
+        self.pick_voice(vid)
+        self.set_mode(mode)
+        self.show("create")
+
+    def delete_voice(self, vid):
+        self.stop_audio()
+        self.engine.voices.delete(vid)
+        self.refresh_voices()
+
+    def form_popup(self, title, fields, on_ok, ok_text="Save"):
+        """fields: [(key, label, default)] -> on_ok({key: text})."""
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        from kivy.uix.popup import Popup
+        box = BoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10))
+        inputs = {}
+        for key, label, default in fields:
+            box.add_widget(Factory.Cap(text=label))
+            inputs[key] = Factory.Field(text=str(default))
+            box.add_widget(inputs[key])
+        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        ok, no = Factory.Primary(text=ok_text), Factory.Btn(text="Cancel")
+        row.add_widget(ok)
+        row.add_widget(no)
+        box.add_widget(row)
+        pop = Popup(title=title, content=box, size_hint=(0.92, None), height=dp(120 + 76 * len(fields)))
+        no.bind(on_release=pop.dismiss)
+
+        def go(*_):
+            vals = {k: w.text for k, w in inputs.items()}
+            try:
+                on_ok(vals)
+                pop.dismiss()
+            except Exception as e:
+                self._say(str(e), True)
+                pop.dismiss()
+        ok.bind(on_release=go)
+        pop.open()
+
+    def save_voice_dialog(self, job_id):
+        def done(v):
+            voice = self.engine.save_voice_from_job(job_id, v["name"], float(v["start"] or 0),
+                                                    float(v["length"] or 15), v["tags"])
+            self.refresh_voices()
+            self._say(f"Saved voice '{voice.name}'. Find it in the Voices tab.")
+        self.form_popup("Save this song's voice", [
+            ("name", "Voice name", ""), ("start", "Take the clip from (seconds) - pick a part with singing", 0),
+            ("length", "Clip length (seconds, up to 30)", 15), ("tags", "Voice description (optional), e.g. female vocal, warm alto", "")],
+            done)
+
+    def pick_voice_file(self):
+        from kivy.factory import Factory
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+        box = BoxLayout(orientation="vertical", spacing=dp(6))
+        chooser = FileChooserListView(path=str(Path.home()), filters=["*.wav", "*.mp3", "*.flac", "*.ogg", "*.m4a"])
+        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        ok, no = Factory.Primary(text="Use this file"), Factory.Btn(text="Cancel")
+        row.add_widget(ok)
+        row.add_widget(no)
+        box.add_widget(chooser)
+        box.add_widget(row)
+        pop = Popup(title="Choose a clean 5-30s recording of ONE voice", content=box, size_hint=(0.95, 0.9))
+        no.bind(on_release=pop.dismiss)
+
+        def go(*_):
+            if not chooser.selection:
+                return
+            path = chooser.selection[0]
+            pop.dismiss()
+            self.form_popup("Clone this voice", [("name", "Voice name", Path(path).stem), ("tags", "Description (optional)", "")],
+                            lambda v: self.clone_voice(path, v["name"], v["tags"]), "Clone")
+        ok.bind(on_release=go)
+        pop.open()
+
+    def clone_voice(self, path, name, tags):
+        v = self.engine.voices.create_from_file(Path(path), name, tags)
+        self.refresh_voices()
+        self._say(f"Saved voice '{v.name}'. Use it in Talk mode with a cloning backend.")
+
+    def add_preset(self):
+        preset = self.ids.preset_pick.text
+        if not preset:
+            return self._say("This speech backend has no preset voices.", True)
+        self.form_popup("Add preset voice", [("name", "Voice name", preset)],
+                        lambda v: (self.engine.voices.create_preset(v["name"], preset), self.refresh_voices()))
+
     # ---- local models ----------------------------------------------------
     def refresh_models(self):
-        bid = self.engine.store.value.backend
-        self._model_by_label = {f"{m.name} ({m.size_mb} MB)": m.id for m in self.engine.models.list(bid)}
+        self._model_by_label = {f"[{m.backend}] {m.name} ({m.size_mb} MB)": m for m in self.engine.models.list()}
         sp = self.ids.s_model
         sp.values = list(self._model_by_label)
-        sel = self.engine.store.value.models.get(bid)
-        label = next((l for l, i in self._model_by_label.items() if i == sel), None)
-        sp.text = label or (sp.values[0] if sp.values else "none installed (ACE-Step downloads once when online)")
+        chosen = set(self.engine.store.value.models.values())
+        label = next((l for l, m in self._model_by_label.items() if m.id in chosen), None)
+        sp.text = label or (sp.values[0] if sp.values else "none installed (backends download once when online)")
 
     def on_model(self, label):
-        mid = getattr(self, "_model_by_label", {}).get(label)
-        if mid:
-            self.engine.select_model(self.engine.store.value.backend, mid)
+        m = getattr(self, "_model_by_label", {}).get(label)
+        if m:
+            self.engine.select_model(m.backend, m.id)
 
     def pick_folder(self):
         from kivy.uix.filechooser import FileChooserListView
@@ -509,17 +791,19 @@ class Root(BoxLayout):
 
         def work():
             try:
-                info = self.engine.import_model(path)
+                st = self.engine.store.value
+                bid = st.speech_backend if self.ids.s_imp.text == "as speech model" else st.backend
+                info = self.engine.import_model(path, bid)
                 Clock.schedule_once(lambda dt: (self.refresh_models(), self._say(f"Imported {info.name}")))
             except Exception as e:
                 Clock.schedule_once(lambda dt, e=e: self._say(f"Import failed: {e}", True))
         threading.Thread(target=work, daemon=True).start()
 
     def delete_model(self):
-        mid = getattr(self, "_model_by_label", {}).get(self.ids.s_model.text)
-        if not mid:
+        m = getattr(self, "_model_by_label", {}).get(self.ids.s_model.text)
+        if not m:
             return self._say("No model selected.", True)
-        self.engine.delete_model(mid)
+        self.engine.delete_model(m.id)
         self.refresh_models()
         self._say("Model deleted.")
 
@@ -531,16 +815,28 @@ class Root(BoxLayout):
         self.ids.sm.current = name
         if name == "library":
             self.refresh_library()
+        if name == "voices":
+            self.refresh_voices()
 
     def _say(self, msg, err=False):
         self.message, self.is_error = msg, err
 
     # ---- generation ------------------------------------------------------
+    def set_mode(self, m):
+        self.mode = m
+        self.ids.tog_song.state = "down" if m == "song" else "normal"
+        self.ids.tog_talk.state = "down" if m == "talk" else "normal"
+
     def generate(self):
         self.stop_audio()
         self.result_id = ""
+        vid = self.selected_voice_id()
         try:
-            self.job = self.engine.submit(self.ids.prompt.text, self.ids.lyrics.text, int(self.ids.dur.value))
+            if self.mode == "talk":
+                self.job = self.engine.submit_talk(self.ids.talk_text.text, vid, self.ids.speed.value)
+            else:
+                self.job = self.engine.submit(self.ids.prompt.text, self.ids.lyrics.text,
+                                              int(self.ids.dur.value), vid)
         except Exception as e:
             self._say(str(e), True)
             return
@@ -572,7 +868,8 @@ class Root(BoxLayout):
         if j.status == "done":
             self.progress = 1
             self._say(f"Done. Seed {j.seed}.")
-            self.result_id = j.id
+            self.result_id, self.result_kind = j.id, j.kind
+            self.refresh_voices()
         elif j.status == "error":
             self._say(j.error, True)
         else:
@@ -588,12 +885,14 @@ class Root(BoxLayout):
         self.playing = False
 
     def toggle_play(self, job_id):
+        self.play_file(self.engine.output_path(job_id, "wav"))
+
+    def play_file(self, path):
         if self.playing:
             return self.stop_audio()
-        p = self.engine.output_path(job_id, "wav")
-        if not p:
+        if not path:
             return self._say("audio file missing", True)
-        self.sound = SoundLoader.load(str(p))
+        self.sound = SoundLoader.load(str(path))
         if not self.sound:
             return self._say("could not play this file", True)
         self.sound.bind(on_stop=lambda *_: setattr(self, "playing", False))
@@ -635,7 +934,9 @@ class Root(BoxLayout):
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["created"]))
             title = Label(text=r["prompt"], size_hint_y=None, height=dp(24), halign="left", shorten=True)
             title.bind(size=lambda w, s: setattr(w, "text_size", s))
-            meta = Label(text=f"{when} · {r['duration']:.0f}s · {r['mode']} · seed {r['seed']} · {r['status']}",
+            talk = (r.get("kind") or "song") == "talk"
+            kindtxt = "talk" if talk else f"{r['duration']:.0f}s · {r['mode']}"
+            meta = Label(text=f"{when} · {kindtxt} · seed {r['seed']} · {r['status']}",
                          size_hint_y=None, height=dp(20), font_size="12sp", color=(0.55, 0.57, 0.64, 1),
                          halign="left", shorten=True)
             meta.bind(size=lambda w, s: setattr(w, "text_size", s))
@@ -655,7 +956,13 @@ class Root(BoxLayout):
             box.add_widget(card)
 
     def reuse(self, r):
-        self.ids.prompt.text, self.ids.lyrics.text = r["prompt"], r["lyrics"] or ""
+        if (r.get("kind") or "song") == "talk":
+            self.ids.talk_text.text = r["prompt"]
+            self.set_mode("talk")
+        else:
+            self.ids.prompt.text, self.ids.lyrics.text = r["prompt"], r["lyrics"] or ""
+            self.set_mode("song")
+        self.pick_voice(r.get("voice_id"))
         self.ids.s_seed.text = str(r["seed"])
         self.save_settings()
         self.show("create")
@@ -666,9 +973,9 @@ class Root(BoxLayout):
         self.refresh_library()
 
     # ---- backend install -------------------------------------------------
-    def install_backend(self, cuda):
+    def install_backend(self, cuda, speech=False):
         try:
-            self.installer.start(cuda)
+            self.installer.start(cuda, speech)
             self.install_log = "starting…"
         except Exception as e:
             self.install_log = str(e)

@@ -12,7 +12,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS history (
   id TEXT PRIMARY KEY, created REAL, backend TEXT, prompt TEXT, lyrics TEXT,
   duration REAL, seed INTEGER, mode TEXT, status TEXT, error TEXT,
-  elapsed REAL, params TEXT
+  elapsed REAL, params TEXT, kind TEXT DEFAULT 'song', voice_id TEXT
 )"""
 
 
@@ -23,6 +23,10 @@ class History:
         self._lock = threading.Lock()
         with self._lock:
             self._db.execute(_SCHEMA)
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(history)")}
+            for col, ddl in (("kind", "TEXT DEFAULT 'song'"), ("voice_id", "TEXT")):   # upgrade old databases
+                if col not in cols:
+                    self._db.execute(f"ALTER TABLE history ADD COLUMN {col} {ddl}")
             self._db.commit()
 
     def add(self, **row) -> None:
