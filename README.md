@@ -36,7 +36,7 @@ No API keys, accounts, telemetry or cloud: see [`docs/SECURITY.md`](docs/SECURIT
 The maintainer does **not** use or test Windows. The portable `.exe` is provided as a courtesy and is **community-tested**: CI builds it and runs
 `sudo-make-music-portable.exe --selfcheck` on it (a quick test that needs no GPU or model), but no one has used it on a real PC. Windows testers and
 maintainers are welcome: open an issue with the **Windows test report** form (attach the output of `--selfcheck selfcheck.txt`).
-Two Windows downloads are offered: the single `sudo-make-music-portable.exe` and `sudo-make-music-windows-folder.zip` (unzip and run; antivirus tools flag this one less often). Both are **unsigned** for now, so SmartScreen will warn, and some antivirus engines flag PyInstaller exes: check with VirusTotal if in doubt. Signing is prepared in CI and waits for a certificate: see [`docs/SIGNING.md`](docs/SIGNING.md).
+Two Windows downloads are offered: the single `sudo-make-music-portable.exe` and `sudo-make-music-windows-folder.zip` (unzip and run; antivirus tools flag this one less often). Both are **unsigned** (no paid certificate), so SmartScreen will warn, and some antivirus engines flag PyInstaller exes: check with VirusTotal if in doubt. Releases carry GitHub build-provenance attestations and checksums, and `docs/SIGNING.md` lists the free ways to build trust (including free signing for open source via SignPath).
 
 ## Install options
 
