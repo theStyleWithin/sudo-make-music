@@ -97,6 +97,13 @@ class ModelBackend(ABC):
     supports_cloning: bool = False   # speech: can imitate a reference clip
     preset_voices: tuple = ()        # speech: built-in voice names
 
+    def model_present(self, model_path: Path | None) -> bool:
+        """True when the local model files this backend needs are on disk (no network involved)."""
+        if not self.needs_model:
+            return True
+        return bool(model_path and Path(model_path).is_dir()
+                    and any(f.name != "smm-model.json" for f in Path(model_path).iterdir()))
+
     def info(self) -> dict:
         ok, why = self.available()
         return dict(id=self.id, name=self.name, description=self.description,
@@ -120,6 +127,37 @@ class SpeechBackend(ModelBackend):
     def synthesize(self, req: SpeechRequest, params: GenParams, progress: ProgressFn,
                    cancelled: CancelFn) -> SegmentResult:
         """Speak `req.text` (one sentence-sized chunk) in the requested voice."""
+
+
+class SeparatorBackend(ModelBackend):
+    """Splits a mix into vocals + instrumental (needed to change the singer of an existing song)."""
+
+    kind = "separator"
+    max_segment_seconds = 60
+
+    def generate_segment(self, req, params, progress, cancelled):  # pragma: no cover
+        raise NotImplementedError
+
+    @abstractmethod
+    def separate(self, audio: np.ndarray, sr: int, progress: ProgressFn,
+                 cancelled: CancelFn) -> tuple[np.ndarray, np.ndarray]:
+        """audio (samples, ch) -> (vocals, instrumental), same shape and sample rate."""
+
+
+class ConverterBackend(ModelBackend):
+    """Voice conversion: re-sings/re-speaks `audio` in the voice of a reference clip (offline, zero-shot)."""
+
+    kind = "converter"
+    supports_cloning = True
+    max_segment_seconds = 60
+
+    def generate_segment(self, req, params, progress, cancelled):  # pragma: no cover
+        raise NotImplementedError
+
+    @abstractmethod
+    def convert(self, audio: np.ndarray, sr: int, voice_ref_path: Path, progress: ProgressFn,
+                cancelled: CancelFn) -> SegmentResult:
+        """Return the same performance in the reference voice (any sample rate; the engine resamples)."""
 
 
 _REGISTRY: dict[str, type[ModelBackend]] = {}

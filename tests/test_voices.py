@@ -172,3 +172,76 @@ def test_history_upgrade_adds_columns(tmp_path):
     assert h.list()[0]["id"] == "a"
     h.add(id="b", kind="talk", voice_id="v", backend="m", prompt="x", status="done")
     assert h.get("b")["kind"] == "talk"
+
+
+def _revoice_engine(engine):
+    engine.store.value.update({"separator_backend": "mock_separator", "converter_backend": "mock_converter"})
+    return engine
+
+
+def test_revoice_changes_singer_and_keeps_backing(engine, tmp_path):
+    _revoice_engine(engine)
+    song = wait(engine.submit("lofi", "", 100))                      # long enough for several windows
+    v = engine.voices.create_from_file(tone(tmp_path / "me.wav", 220, 5), "Me")
+    job = wait(engine.submit_revoice(song.id, v.id), timeout=60)
+    assert job.status == "done", job.error
+    assert job.segments >= 3
+    a, sr = read_wav(engine.output_path(song.id, "wav"))
+    b, sr2 = read_wav(engine.output_path(job.id, "wav"))
+    assert sr == sr2 and abs(len(a) - len(b)) < sr * 0.1          # same length as the original
+    assert not np.allclose(a[:sr * 5], b[:sr * 5], atol=1e-3)     # but not the same audio
+    row = engine.history.get(job.id)
+    assert row["kind"] == "revoice" and row["voice_id"] == v.id
+    assert engine._backends["mock_converter"].last_ref == engine.voices.ref_path(v.id)
+    assert engine.history.get(song.id)["status"] == "done"         # the original song is untouched
+
+
+def test_revoice_rejects_preset_and_talk(engine, tmp_path):
+    _revoice_engine(engine)
+    song = wait(engine.submit("lofi", "", 10))
+    preset = engine.voices.create_preset("P", "low")
+    with pytest.raises(ValueError, match="reference clip"):
+        engine.submit_revoice(song.id, preset.id)
+    talk = wait(engine.submit_talk("hello there"))
+    v = engine.voices.create_from_file(tone(tmp_path / "a.wav", 200), "A")
+    with pytest.raises(ValueError, match="finished song"):
+        engine.submit_revoice(talk.id, v.id)
+
+
+def test_revoice_cancel_leaves_no_partial_file(engine, tmp_path):
+    _revoice_engine(engine)
+    song = wait(engine.submit("lofi", "", 200))
+    v = engine.voices.create_from_file(tone(tmp_path / "a.wav", 200), "A")
+    job = engine.submit_revoice(song.id, v.id)
+    time.sleep(0.1)
+    engine.cancel(job.id)
+    wait(job)
+    assert job.status == "cancelled" and engine.output_path(job.id, "wav") is None
+
+
+def test_model_status_reports_missing_models_and_offline_guard(engine):
+    engine.store.value.update({"backend": "acestep", "speech_backend": "chatterbox",
+                               "converter_backend": "openvoice", "separator_backend": "demucs"})
+    st = {r["role"]: r for r in engine.model_status()}
+    assert set(st) == {"Music model", "Talk voice model", "Singing voice-cloning model", "Vocal-separation model"}
+    assert all(not r["installed"] for r in st.values())
+    engine.store.value.update({"offline_mode": True})
+    with pytest.raises(RuntimeError, match="offline"):
+        engine.resolve_model(engine._backend("openvoice"))
+    # importing a local folder (e.g. from a USB stick) makes it available without any network
+    import pathlib
+    folder = pathlib.Path(engine.models.root.parent / "usb" / "ov")
+    (folder / "converter").mkdir(parents=True)
+    (folder / "converter" / "checkpoint.pth").write_bytes(b"x")
+    engine.import_model(str(folder), "openvoice", "OpenVoice v2")
+    assert engine.resolve_model(engine._backend("openvoice")) is not None
+    assert {r["role"]: r for r in engine.model_status()}["Singing voice-cloning model"]["installed"]
+
+
+def test_default_folder_with_files_counts_as_installed_offline(engine):
+    from sudo_make_music import paths
+    d = paths.models_dir() / "ace-step"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "weights.bin").write_bytes(b"x")                       # downloaded earlier by the library itself
+    engine.store.value.update({"offline_mode": True})
+    assert engine.resolve_model(engine._backend("acestep")) == d

@@ -21,6 +21,7 @@ TORCH_INDEXES = {
     "cu121": "https://download.pytorch.org/whl/cu121",
     "cpu": "https://download.pytorch.org/whl/cpu",
 }
+OPENVOICE_SRC = "https://github.com/myshell-ai/OpenVoice/archive/refs/heads/main.zip"
 ACESTEP_SRC = "https://github.com/ace-step/ACE-Step/archive/refs/heads/main.zip"
 
 
@@ -35,7 +36,7 @@ def activate() -> None:
         site.addsitedir(str(d))
 
 
-def install_commands(cuda: str = "cu126", speech: bool = False) -> list[list[str]]:
+def install_commands(cuda: str = "cu126", speech: bool = False, cloning: bool = False) -> list[list[str]]:
     if cuda not in TORCH_INDEXES:
         raise ValueError(f"cuda must be one of {sorted(TORCH_INDEXES)}")
     # Frozen (PyInstaller) exe has no `python -m`; the launcher understands --run-module instead.
@@ -47,6 +48,8 @@ def install_commands(cuda: str = "cu126", speech: bool = False) -> list[list[str
     ]
     if speech:   # talk mode: Kokoro (presets) + Chatterbox (voice cloning). May re-pin torch versions.
         cmds.append(base + ["kokoro", "chatterbox-tts", "soundfile"])
+    if cloning:  # re-voice: Demucs (vocal separation) + OpenVoice (voice conversion)
+        cmds.append(base + ["demucs", "soundfile", OPENVOICE_SRC])
     return cmds
 
 
@@ -59,8 +62,8 @@ class Installer:
         self.ok: bool | None = None
         self.log: list[str] = []
 
-    def start(self, cuda: str = "cu126", speech: bool = False) -> None:
-        cmds = install_commands(cuda, speech)
+    def start(self, cuda: str = "cu126", speech: bool = False, cloning: bool = False) -> None:
+        cmds = install_commands(cuda, speech, cloning)
         with self.lock:
             if self.running:
                 raise RuntimeError("install already running")

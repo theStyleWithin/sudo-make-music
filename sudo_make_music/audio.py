@@ -39,6 +39,29 @@ def read_wav(path: Path) -> tuple[np.ndarray, int]:
     return data.reshape(-1, ch), sr
 
 
+def wav_info(path: Path) -> tuple[int, int, int]:
+    """(frames, sample_rate, channels)"""
+    with wave.open(str(path), "rb") as w:
+        return w.getnframes(), w.getframerate(), w.getnchannels()
+
+
+def read_wav_range(path: Path, start_s: float, dur_s: float) -> tuple[np.ndarray, int]:
+    """Read only a window of a 16-bit WAV (keeps long songs out of RAM)."""
+    with wave.open(str(path), "rb") as w:
+        ch, sr = w.getnchannels(), w.getframerate()
+        w.setpos(min(int(start_s * sr), w.getnframes()))
+        raw = w.readframes(int(dur_s * sr))
+    return (np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0).reshape(-1, ch), sr
+
+
+def resample_linear(audio: np.ndarray, sr_from: int, sr_to: int) -> np.ndarray:
+    if sr_from == sr_to or len(audio) == 0:
+        return audio
+    n = int(len(audio) * sr_to / sr_from)
+    x = np.linspace(0, len(audio) - 1, n)
+    return np.stack([np.interp(x, np.arange(len(audio)), audio[:, c]) for c in range(audio.shape[1])], axis=1).astype(np.float32)
+
+
 def write_wav(path: Path, audio: np.ndarray, sr: int) -> None:
     audio = audio.reshape(len(audio), -1)
     w = WavWriter(path, sr, audio.shape[1])

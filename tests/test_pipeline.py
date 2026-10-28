@@ -101,6 +101,7 @@ def test_install_commands():
     assert "--target" in cmds[0] and "whl/cpu" in " ".join(cmds[0])
     assert len(runtime.install_commands("cpu", speech=True)) == len(cmds) + 1
     assert "chatterbox-tts" in runtime.install_commands("cpu", speech=True)[-1]
+    assert "demucs" in runtime.install_commands("cpu", cloning=True)[-1]
     with pytest.raises(ValueError):
         runtime.install_commands("bogus")
 

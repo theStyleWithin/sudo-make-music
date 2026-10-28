@@ -16,7 +16,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import hardware, memory, paths
-from .audio import WavWriter, Stitcher, plan_segments, export_mp3, read_wav
+from .audio import (WavWriter, Stitcher, plan_segments, export_mp3, read_wav, read_wav_range, wav_info,
+                    resample_linear)
 from .backends import registry, SegmentRequest, SpeechRequest, Cancelled
 from .history import History
 from .models import ModelStore
@@ -43,6 +44,7 @@ class Job:
     voice_id: str | None = None
     speed: float = 1.0
     voice_tags: str = ""
+    source_id: str | None = None             # revoice: the song being re-voiced
     decision: dict | None = None            # pending hardware warning shown to the user
     choice: str | None = None
     decided: threading.Event = field(default_factory=threading.Event)
@@ -109,26 +111,47 @@ class Engine:
                     model_loaded=any(b.loaded for b in self._backends.values()),
                     free_vram_mb=hardware.free_vram_mb(),
                     models=[m.to_dict() for m in self.models.list()],
-                    selected_models=self.store.value.models, speech_backend=self.store.value.speech_backend,
+                    selected_models=self.store.value.models, model_status=self.model_status(), speech_backend=self.store.value.speech_backend,
                     offline_mode=self.store.value.offline_mode)
 
     # ---- models --------------------------------------------------------
-    def resolve_model(self, backend) -> "Path | None":
-        """Pick the model folder for a backend: selected > first installed > its downloadable default."""
+    def _find_model(self, backend) -> "Path | None":
+        """Selected model > first imported model > the backend's default folder (may be empty)."""
         if not backend.needs_model:
             return None
-        s = self.store.value
-        picked = self.models.get(s.models.get(backend.id, ""))
+        picked = self.models.get(self.store.value.models.get(backend.id, ""))
         if picked and picked.backend == backend.id:
             return Path(picked.path)
         installed = self.models.list(backend.id)
         if installed:
             return Path(installed[0].path)
-        folder = paths.models_dir() / backend.default_model_name
-        if s.offline_mode:
+        return paths.models_dir() / backend.default_model_name
+
+    def resolve_model(self, backend) -> "Path | None":
+        """Model folder for a backend. In offline mode a missing local model is an error, never a download."""
+        path = self._find_model(backend)
+        if path is not None and self.store.value.offline_mode and not backend.model_present(path):
             raise RuntimeError(f"No local {backend.name} model installed and offline mode is on. "
                                "Import a model folder in Settings > Models, or turn offline mode off to download once.")
-        return folder
+        return path
+
+    ROLES = (("backend", "Music model"), ("speech_backend", "Talk voice model"),
+             ("converter_backend", "Singing voice-cloning model"), ("separator_backend", "Vocal-separation model"))
+
+    def model_status(self) -> list[dict]:
+        """Which separate local models each feature needs, and whether they are on disk right now."""
+        out = []
+        for attr, label in self.ROLES:
+            bid = getattr(self.store.value, attr)
+            if bid not in registry():
+                out.append(dict(role=label, backend=bid, name=bid, library=False, installed=False, path=None))
+                continue
+            b = self._backend(bid)
+            path = self._find_model(b)
+            lib, _ = b.available()
+            out.append(dict(role=label, backend=bid, name=b.name, library=lib, installed=b.model_present(path),
+                            needs_model=b.needs_model, path=str(path) if path else None))
+        return out
 
     def import_model(self, path: str, backend: str | None = None, name: str | None = None, link: bool = False):
         b = self._backend(backend or self.store.value.backend)
@@ -212,6 +235,29 @@ class Engine:
         self._q.put(job)
         return job
 
+    def submit_revoice(self, source_id: str, voice_id: str) -> Job:
+        """Change the singer of an existing song: separate vocals -> convert to the saved voice -> remix.
+        Needs two separate local models (vocal separation + voice conversion) and a voice with a reference clip."""
+        s = self.store.value
+        row = self.history.get(source_id)
+        if not row or not (paths.outputs_dir() / f"{source_id}.wav").is_file() or (row.get("kind") or "song") == "talk":
+            raise ValueError("pick a finished song to re-voice")
+        voice = self.voices.get(voice_id) if voice_id else None
+        if not voice or not voice.has_ref:
+            raise ValueError("choose a saved voice that has a reference clip (cloned or saved from a song), not a preset")
+        conv, sep = self._backend(s.converter_backend), self._backend(s.separator_backend)
+        for b in (conv, sep):
+            ok, why = b.available()
+            if not ok:
+                raise RuntimeError(why)
+            self.resolve_model(b)          # fail fast in offline mode
+        job = Job(id=uuid.uuid4().hex[:12], prompt=f"{row['prompt']} (re-voiced: {voice.name})", lyrics=row.get("lyrics") or "",
+                  duration=int(row["duration"] or 0), seed=row["seed"], backend=conv.id, params=self.active_params(),
+                  steps=0, fmt=s.output_format, kind="revoice", voice_id=voice.id, source_id=source_id)
+        self.jobs[job.id] = job
+        self._q.put(job)
+        return job
+
     def save_voice_from_job(self, job_id: str, name: str, start: float = 0.0, length: float = 15.0, tags: str = ""):
         """Keep the voice of a generated song in the (separate) voice library."""
         row = self.history.get(job_id)
@@ -260,6 +306,8 @@ class Engine:
             self._with_fallback(job, backend, lambda: backend.load(job.params, model_path), model_path)
             if job.kind == "talk":
                 self._make_speech(job, backend, model_path, wav, hold)
+            elif job.kind == "revoice":
+                self._make_revoice(job, backend, model_path, wav, hold)
             else:
                 self._make_song(job, backend, model_path, wav, hold)
             if job.fmt == "mp3":
@@ -324,6 +372,49 @@ class Engine:
                 prev_tail, prev_sr = res.audio[-n:].copy(), res.sample_rate
             del res
             self._clear_cuda()
+        stitcher.finish()
+        hold["writer"] = None
+
+    def _make_revoice(self, job: Job, conv, conv_model, wav, hold: dict) -> None:
+        sep = self._backend(self.store.value.separator_backend)
+        sep_model = self.resolve_model(sep)
+        job.message = "loading vocal separation model"
+        self._with_fallback(job, sep, lambda: sep.load(job.params, sep_model), sep_model)
+        src = paths.outputs_dir() / f"{job.source_id}.wav"
+        ref = self.voices.ref_path(job.voice_id)
+        frames, sr, ch = wav_info(src)
+        total = frames / sr
+        win, ov = 45.0, 2.0                               # windows keep RAM bounded for long songs
+        n = 1 if total <= win else int(np.ceil((total - ov) / (win - ov)))
+        stitcher = None
+        for i in range(n):
+            if job.cancel.is_set():
+                raise Cancelled()
+            job.segment, job.segments = i + 1, n
+            job.message = f"re-voicing part {i + 1}/{n}"
+            audio, _ = read_wav_range(src, i * (win - ov), win)
+            if len(audio) < int(0.5 * sr):
+                break
+            noop = lambda f: None
+            vocals, inst = self._with_fallback(job, sep, lambda: sep.separate(audio, sr, noop, job.cancel.is_set), sep_model)
+            res = self._with_fallback(job, conv, lambda: conv.convert(vocals, sr, ref, noop, job.cancel.is_set), conv_model)
+            new = resample_linear(res.audio, res.sample_rate, sr)
+            if new.shape[1] != inst.shape[1]:
+                new = np.repeat(new[:, :1], inst.shape[1], axis=1)
+            m = min(len(new), len(inst))
+            mix = new[:m] + inst[:m]
+            peak = float(np.max(np.abs(mix))) if m else 0.0
+            if peak > 1.0:                                # avoid clipping after summing the stems
+                mix = mix / peak
+            if stitcher is None:
+                hold["writer"] = WavWriter(wav, sr, mix.shape[1])
+                stitcher = Stitcher(hold["writer"], ov if n > 1 else 0.0)
+            stitcher.add(mix, sr)
+            job.progress = (i + 1) / n
+            del audio, vocals, inst, res, new, mix
+            self._clear_cuda()
+        if stitcher is None:
+            raise ValueError("the song is too short to re-voice")
         stitcher.finish()
         hold["writer"] = None
 

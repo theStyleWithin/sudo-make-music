@@ -13,6 +13,8 @@ from .memory import MODES, OVERRIDABLE
 class Settings:
     backend: str = "acestep"
     speech_backend: str = "chatterbox"  # talk mode
+    separator_backend: str = "demucs"   # re-voice: split vocals from backing
+    converter_backend: str = "openvoice"  # re-voice: change the singer
     memory_mode: str | None = None      # None -> auto from detected VRAM
     overrides: dict = field(default_factory=dict)  # max_duration/chunk_seconds/overlap_seconds/offload/quantize
     seed: int | None = None             # None -> random per generation
@@ -27,6 +29,9 @@ class Settings:
     def update(self, data: dict) -> None:
         if "backend" in data:
             self.backend = str(data["backend"])
+        for k in ("separator_backend", "converter_backend"):
+            if k in data:
+                setattr(self, k, str(data[k]))
         if "speech_backend" in data:
             self.speech_backend = str(data["speech_backend"])
         if "memory_mode" in data:

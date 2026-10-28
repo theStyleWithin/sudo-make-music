@@ -225,6 +225,12 @@ KV = r"""
                             text: 'Save MP3'
                             on_release: root.save(root.result_id, 'mp3')
                         Btn:
+                            text: 'Re-voice'
+                            size_hint_x: 1 if root.result_kind in ('song', 'revoice') else 0
+                            opacity: 1 if root.result_kind in ('song', 'revoice') else 0
+                            disabled: root.result_kind not in ('song', 'revoice')
+                            on_release: root.revoice(root.result_id)
+                        Btn:
                             text: 'Save voice'
                             size_hint_x: 1 if root.result_kind == 'song' else 0
                             opacity: 1 if root.result_kind == 'song' else 0
@@ -242,6 +248,14 @@ KV = r"""
                     Cap:
                         text: 'Voice library - kept separate from your songs. Only clone voices you have the right to use.'
                         height: dp(36)
+                    Label:
+                        text: root.model_report
+                        markup: True
+                        size_hint_y: None
+                        height: self.texture_size[1] + dp(8)
+                        text_size: self.width, None
+                        halign: 'left'
+                        font_size: '12sp'
                     Btn:
                         text: 'Clone a voice from an audio file...'
                         on_release: root.pick_voice_file()
@@ -337,6 +351,14 @@ KV = r"""
                     Pick:
                         id: s_speech
                     Cap:
+                        text: 'Singing voice-cloning model backend (re-voice)'
+                    Pick:
+                        id: s_conv
+                    Cap:
+                        text: 'Vocal-separation backend (re-voice)'
+                    Pick:
+                        id: s_sep
+                    Cap:
                         text: 'Local models (stored on this device, used offline)'
                     Pick:
                         id: s_model
@@ -347,7 +369,7 @@ KV = r"""
                         spacing: dp(8)
                         Pick:
                             id: s_imp
-                            values: ['as music model', 'as speech model']
+                            values: ['as music model', 'as talk-voice model', 'as singing-clone model', 'as vocal-separation model']
                             text: 'as music model'
                             size_hint_y: None
                             height: dp(44)
@@ -419,6 +441,9 @@ KV = r"""
                         Btn:
                             text: 'Install voice libraries (Kokoro, Chatterbox)'
                             on_release: root.install_backend(s_cuda.text, True)
+                        Btn:
+                            text: 'Install singing-clone libraries (Demucs, OpenVoice)'
+                            on_release: root.install_backend(s_cuda.text, False, True)
                         Label:
                             text: root.install_log
                             size_hint_y: None
@@ -460,6 +485,7 @@ class Root(BoxLayout):
     device_note = StringProperty("")
     mode = StringProperty("song")          # song | talk
     result_kind = StringProperty("")
+    model_report = StringProperty("")
 
     def __init__(self, engine: Engine, **kw):
         super().__init__(**kw)
@@ -494,6 +520,14 @@ class Root(BoxLayout):
             return {b["name"] + ("" if b["available"] else " (not installed)"): b["id"]
                     for b in st["backends"] if b["kind"] == kind}
         self._backend_by_name, self._sbackend_by_name = labels("music"), labels("speech")
+        self._conv_by_name, self._sep_by_name = labels("converter"), labels("separator")
+        stg = self.engine.store.value
+        for spinner, table, cur in ((self.ids.s_conv, self._conv_by_name, stg.converter_backend),
+                                    (self.ids.s_sep, self._sep_by_name, stg.separator_backend)):
+            spinner.values = list(table)
+            for label, bid in table.items():
+                if bid == cur:
+                    spinner.text = label
         for spinner, table, cur in ((self.ids.backend, self._backend_by_name, self.engine.store.value.backend),
                                     (self.ids.sbackend, self._sbackend_by_name, self.engine.store.value.speech_backend),
                                     (self.ids.s_speech, self._sbackend_by_name, self.engine.store.value.speech_backend)):
@@ -548,6 +582,8 @@ class Root(BoxLayout):
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
                 offline_mode=i.s_offline.active, continuity=i.s_cont.active, ask_on_fallback=i.s_warn.active,
                 speech_backend=getattr(self, "_sbackend_by_name", {}).get(i.s_speech.text, self.engine.store.value.speech_backend),
+                converter_backend=getattr(self, "_conv_by_name", {}).get(i.s_conv.text, self.engine.store.value.converter_backend),
+                separator_backend=getattr(self, "_sep_by_name", {}).get(i.s_sep.text, self.engine.store.value.separator_backend),
                 overrides=dict(max_duration=num(i.s_max), chunk_seconds=num(i.s_chunk),
                                overlap_seconds=num(i.s_ov, float), offload=tri(i.s_off), quantize=tri(i.s_q),
                                device={"auto": None, "gpu": "cuda", "cpu": "cpu"}[i.s_dev.text])))
@@ -633,6 +669,16 @@ class Root(BoxLayout):
                 self.ids.preset_pick.text = self.ids.preset_pick.values[0]
         except Exception:
             pass
+        lines = []
+        for r in self.engine.model_status():
+            if not r["library"]:
+                state = "[color=ff9966]library not installed[/color]"
+            elif r.get("needs_model") and not r["installed"]:
+                state = "[color=ff6b6b]model missing[/color] - Settings > Models > Import folder (works offline)"
+            else:
+                state = "[color=5fd38d]ready[/color]"
+            lines.append(f"{r['role']}: {r['name']} - {state}")
+        self.model_report = "\n".join(lines)
         box = self.ids.voice_list
         box.clear_widgets()
         if not voices:
@@ -792,7 +838,8 @@ class Root(BoxLayout):
         def work():
             try:
                 st = self.engine.store.value
-                bid = st.speech_backend if self.ids.s_imp.text == "as speech model" else st.backend
+                bid = {"as talk-voice model": st.speech_backend, "as singing-clone model": st.converter_backend,
+                       "as vocal-separation model": st.separator_backend}.get(self.ids.s_imp.text, st.backend)
                 info = self.engine.import_model(path, bid)
                 Clock.schedule_once(lambda dt: (self.refresh_models(), self._say(f"Imported {info.name}")))
             except Exception as e:
@@ -822,6 +869,20 @@ class Root(BoxLayout):
         self.message, self.is_error = msg, err
 
     # ---- generation ------------------------------------------------------
+    def revoice(self, source_id):
+        """Re-sing a finished song in the voice picked in the Voice box (needs the separation + cloning models)."""
+        self.stop_audio()
+        vid = self.selected_voice_id()
+        if not vid:
+            return self._say("Pick a saved voice in the Voice box first.", True)
+        try:
+            self.job = self.engine.submit_revoice(source_id, vid)
+        except Exception as e:
+            return self._say(str(e), True)
+        self.result_id = ""
+        self.busy, self.progress = True, 0
+        self._say("re-voicing…")
+
     def set_mode(self, m):
         self.mode = m
         self.ids.tog_song.state = "down" if m == "song" else "normal"
@@ -949,6 +1010,8 @@ class Root(BoxLayout):
             add("Play", lambda i=r["id"]: self.toggle_play(i), done)
             add("WAV", lambda i=r["id"]: self.save(i, "wav"), done)
             add("MP3", lambda i=r["id"]: self.save(i, "mp3"), done)
+            if (r.get("kind") or "song") in ("song", "revoice"):
+                add("Re-voice", lambda i=r["id"]: self.revoice(i), done)
             add("Reuse", lambda r=r: self.reuse(r))
             add("Delete", lambda i=r["id"]: self.delete(i))
             for w in (title, meta, btns):
@@ -973,9 +1036,9 @@ class Root(BoxLayout):
         self.refresh_library()
 
     # ---- backend install -------------------------------------------------
-    def install_backend(self, cuda, speech=False):
+    def install_backend(self, cuda, speech=False, cloning=False):
         try:
-            self.installer.start(cuda, speech)
+            self.installer.start(cuda, speech, cloning)
             self.install_log = "starting…"
         except Exception as e:
             self.install_log = str(e)

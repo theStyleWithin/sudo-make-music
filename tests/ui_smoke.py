@@ -39,7 +39,9 @@ def step(dt):
     state["n"] += 1
     ph = state["phase"]
     if ph == "song" and state["n"] == 1:
-        app.engine.store.value.update({"backend": "mock", "speech_backend": "mock_speech", "ask_on_fallback": False})
+        app.engine.store.value.update({"backend": "mock", "speech_backend": "mock_speech",
+                                       "separator_backend": "mock_separator", "converter_backend": "mock_converter",
+                                       "ask_on_fallback": False})
         r.refresh_status()
         r.ids.prompt.text, r.ids.dur.value = "lofi chill", 20
         r.generate()
@@ -72,6 +74,14 @@ def step(dt):
         print("TALK", r.message, r.result_kind)
         expect(r.result_kind == "talk", "talk result")
         shot("talk_done")
+        r.set_mode("song")
+        r.revoice(r.engine.history.list()[-1]["id"])    # the first (song) entry
+        state["phase"] = "revoice"
+        state["n"] = 0
+    elif ph == "revoice" and not r.busy and state["n"] > 2 and r.result_id:
+        print("REVOICE", r.message, r.result_kind)
+        expect(r.result_kind == "revoice", "revoice result")
+        shot("revoice_done")
         r.show("library")
         state["phase"] = "end"
         state["n"] = 0
