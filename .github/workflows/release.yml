@@ -120,13 +120,14 @@ jobs:
       - name: Show build errors and bin/ (always)
         if: always()
         run: |
-          # strip colour codes and buildozer's "# VAR = ..." environment dump, then show the interesting lines
-          sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -vE '^# +[A-Za-z_]+ = ' > clean.log || true
-          e=$(grep -inE 'error|failed|exception|traceback|not found|no such|cannot|fatal|unable' clean.log | grep -viE 'warning|deprecat|-Werror|ignor' | head -25 | cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          t=$(tail -n 25 clean.log 2>/dev/null | cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          # buildozer prints its own "# Run/# Cwd/# Command failed" block AFTER the failing command's output,
+          # so drop those lines and look at what came right before.
+          sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -vE '^# ' > clean.log || true
+          e=$(grep -nE '\[ERROR\]|Traceback \(most recent|^[A-Za-z]+Error:|error: |CMake Error|make(\[[0-9]+\])?: \*\*\*|fatal error|FAILED:|Exception:|No matching distribution|Could not find|ERROR:' clean.log | tail -25 | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          t=$(tail -n 40 clean.log 2>/dev/null | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           l=$(ls -la bin 2>&1 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=android error lines::$e"
-          echo "::notice title=android log tail::$t"
+          echo "::notice title=android LAST error lines::$e"
+          echo "::notice title=android last 40 log lines::$t"
           echo "::notice title=android bin/::$l"
       - name: Collect the APK
         run: |
