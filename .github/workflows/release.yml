@@ -33,11 +33,21 @@ jobs:
   windows:
     needs: test
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: powershell -File packaging/windows/build.ps1
+      - name: Build portable exe
+        timeout-minutes: 30
+        shell: pwsh
+        run: ./packaging/windows/build.ps1 *>&1 | Tee-Object -FilePath build.log
+      - name: Report build tail on failure
+        if: failure() || cancelled()
+        shell: pwsh
+        run: |
+          $t = (Get-Content build.log -Tail 40 -ErrorAction SilentlyContinue) -join '%0A'
+          Write-Host "::error title=windows build tail::$t"
       - uses: actions/upload-artifact@v4
         with: { name: windows-portable, path: dist/sudo-make-music-portable.exe }
 
@@ -58,7 +68,13 @@ jobs:
             libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential ccache libltdl-dev
       - run: pip install buildozer 'cython<3.1' setuptools wheel
       - name: Build debug APK
-        run: buildozer -v android debug
+        timeout-minutes: 60
+        run: buildozer -v android debug 2>&1 | tee build.log
+      - name: Report build tail on failure
+        if: failure() || cancelled()
+        run: |
+          t=$(tail -n 40 build.log 2>/dev/null | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=android build tail::$t"
       - run: ls -la bin/
       - uses: actions/upload-artifact@v4
         with: { name: android-apk, path: 'bin/*.apk' }
