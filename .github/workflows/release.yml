@@ -117,12 +117,16 @@ jobs:
       - name: Build debug APK
         timeout-minutes: 60
         run: buildozer -v android debug 2>&1 | tee build.log
-      - name: Show build tail and bin/ (always)
+      - name: Show build errors and bin/ (always)
         if: always()
         run: |
-          t=$(tail -n 30 build.log 2>/dev/null | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          # strip colour codes and buildozer's "# VAR = ..." environment dump, then show the interesting lines
+          sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -vE '^# +[A-Za-z_]+ = ' > clean.log || true
+          e=$(grep -inE 'error|failed|exception|traceback|not found|no such|cannot|fatal|unable' clean.log | grep -viE 'warning|deprecat|-Werror|ignor' | head -25 | cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          t=$(tail -n 25 clean.log 2>/dev/null | cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           l=$(ls -la bin 2>&1 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=android build tail::$t"
+          echo "::notice title=android error lines::$e"
+          echo "::notice title=android log tail::$t"
           echo "::notice title=android bin/::$l"
       - name: Collect the APK
         run: |
