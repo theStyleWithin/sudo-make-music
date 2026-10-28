@@ -1,6 +1,6 @@
 # Maintainer: <whoever submits this to the AUR - put your name/email here>
 pkgname=sudo-make-music-git
-pkgver=0.1.0.r0.g0000000
+pkgver=1.0.0.r0.g0000000
 pkgrel=1
 pkgdesc='Offline AI music generation for mid-range PCs (6GB VRAM friendly)'
 arch=('any')
@@ -17,7 +17,7 @@ sha256sums=('SKIP')
 
 pkgver() {
   cd "$pkgname"
-  printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  printf '1.0.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {

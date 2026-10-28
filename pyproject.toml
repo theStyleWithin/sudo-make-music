@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sudo-make-music"
-version = "0.1.0"
+version = "1.0.0"
 description = "Offline AI music generation for mid-range PCs (6GB VRAM friendly)"
 requires-python = ">=3.10"
 license = { text = "Unlicense" }

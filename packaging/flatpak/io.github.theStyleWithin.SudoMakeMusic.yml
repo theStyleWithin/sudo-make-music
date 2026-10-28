@@ -70,5 +70,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/theStyleWithin/sudo-make-music.git
-        tag: v0.1.0
-        # Flathub requires the commit too: set `commit:` to the output of `git rev-parse v0.1.0`
+        tag: v1.0.0
+        # Flathub requires the commit too: set `commit:` to the output of `git rev-parse v1.0.0`
