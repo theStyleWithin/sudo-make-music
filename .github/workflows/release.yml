@@ -125,6 +125,9 @@ jobs:
           sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -vE '^# ' > clean.log || true
           e=$(grep -nE '\[ERROR\]|Traceback \(most recent|^[A-Za-z]+Error:|error: |CMake Error|make(\[[0-9]+\])?: \*\*\*|fatal error|FAILED:|Exception:|No matching distribution|Could not find|ERROR:' clean.log | tail -25 | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           t=$(tail -n 40 clean.log 2>/dev/null | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          # buildozer's own failure summary ("# Command failed: ...", "# Error code: ...") names the failing command
+          f=$(sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -E '^# (Run|Cwd|Command failed|Error code|Buildozer failed)' | tail -8 | cut -c1-700 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=android failure summary::$f"
           l=$(ls -la bin 2>&1 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::notice title=android LAST error lines::$e"
           echo "::notice title=android last 40 log lines::$t"
