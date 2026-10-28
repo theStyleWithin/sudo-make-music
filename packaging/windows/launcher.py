@@ -4,8 +4,14 @@ import runpy
 import sys
 from pathlib import Path
 
-# Keep Kivy's config/logs next to the exe (portable) instead of in the user's profile.
-os.environ.setdefault("KIVY_HOME", str(Path(sys.executable).parent / "sudo-make-music-data" / "kivy"))
+# Keep Kivy's config/logs next to the exe (portable) instead of in the user's profile. Kivy needs the folder to
+# exist already; if the exe sits somewhere read-only, skip this and let Kivy use the user profile.
+_kivy_home = Path(sys.executable).parent / "sudo-make-music-data" / "kivy"
+try:
+    _kivy_home.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("KIVY_HOME", str(_kivy_home))
+except OSError:
+    pass
 from sudo_make_music.stdio import ensure_std_streams  # noqa: E402
 
 ensure_std_streams()   # a windowed exe has no usable stdout/stderr; Kivy would recurse forever on import
