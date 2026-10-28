@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sudo make music</title>
+<style>
+:root{--bg:#14151a;--card:#1d1f27;--fg:#e8e8ee;--mut:#8b8fa3;--acc:#7c9cff;--err:#ff6b6b;--ok:#5fd38d;--bd:#2c2f3b}
+@media (prefers-color-scheme:light){:root{--bg:#f4f5f8;--card:#fff;--fg:#1a1c24;--mut:#667;--bd:#dde}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}h1{font-size:20px;margin:8px 0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:12px 0}
+label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
+input,textarea,select,button{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px;width:100%}
+textarea{min-height:90px;resize:vertical}button{cursor:pointer;width:auto;padding:8px 16px}
+button.primary{background:var(--acc);color:#000;border:0;font-weight:600}button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+.badge{display:inline-block;background:var(--bg);border:1px solid var(--bd);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--mut)}
+.bar{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin:8px 0}.bar>div{height:100%;background:var(--acc);width:0;transition:width .3s}
+.err{color:var(--err)}.hist{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--bd)}
+.hist .t{flex:1;min-width:0}.hist .t div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mut{color:var(--mut);font-size:12px}details summary{cursor:pointer;color:var(--mut)}a{color:var(--acc)}
+audio{width:100%;margin-top:8px}
+</style></head><body><main>
+<h1>sudo make music <span class="badge" id="mode">…</span></h1>
+<div class="mut" id="hw"></div>
+
+<div class="card">
+  <label>Style / genre / mood</label>
+  <input id="prompt" placeholder="lo-fi hip hop, mellow, rainy night, piano, vinyl crackle">
+  <label>Lyrics (optional — leave empty for instrumental)</label>
+  <textarea id="lyrics" placeholder="[verse]&#10;..."></textarea>
+  <div class="row">
+    <div><label>Duration: <span id="dv">60</span>s</label><input id="dur" type="range" min="10" max="300" value="60"></div>
+    <div><label>Backend</label><select id="backend"></select></div>
+  </div>
+  <p><button class="primary" id="go">Generate</button> <button id="cancel" disabled>Cancel</button></p>
+  <div class="bar"><div id="pb"></div></div><div class="mut" id="msg"></div>
+  <div id="result"></div>
+</div>
+
+<details class="card" id="settings"><summary>Settings — memory &amp; performance</summary>
+  <div class="row">
+    <div><label>Memory mode</label><select id="s_mode"><option value="auto">Auto (from VRAM)</option>
+      <option value="safe">Safe — longest on 6GB</option><option value="balanced">Balanced</option>
+      <option value="quality">Quality — may OOM on low VRAM</option></select></div>
+    <div><label>Seed (blank = random)</label><input id="s_seed" type="number"></div>
+    <div><label>Steps</label><input id="s_steps" type="number" min="1" max="200"></div>
+  </div>
+  <div class="row">
+    <div><label>Max duration (s)</label><input id="s_max" type="number"></div>
+    <div><label>Chunk length (s)</label><input id="s_chunk" type="number"></div>
+    <div><label>Crossfade (s)</label><input id="s_ov" type="number" step="0.5"></div>
+  </div>
+  <div class="row">
+    <div><label>CPU offload</label><select id="s_off"><option value="">Mode default</option><option value="true">On</option><option value="false">Off</option></select></div>
+    <div><label>INT8 quantization</label><select id="s_q"><option value="">Mode default</option><option value="true">On</option><option value="false">Off</option></select></div>
+    <div><label>Output format</label><select id="s_fmt"><option>wav</option><option>mp3</option></select></div>
+    <div><label>Unload when idle (s, 0=never)</label><input id="s_idle" type="number" min="0"></div>
+  </div>
+  <p><button class="primary" id="save">Save settings</button> <button id="unload">Unload model now</button>
+  <span class="mut" id="eff"></span></p>
+  <div class="mut">Batch size is fixed at 1. Blank fields use the memory-mode default.</div>
+</details>
+
+<div class="card"><b>History</b><div id="hist"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);let cur=null,timer=null,backends=[];
+const api=async(p,o)=>{const r=await fetch(p,o);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j};
+const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('dur').oninput=()=>$('dv').textContent=$('dur').value;
+
+function showStatus(s){
+  $('mode').textContent=s.mode_description;
+  const h=s.hardware;$('hw').textContent=(h.gpu_name?`${h.gpu_name} · ${h.vram_mb} MB VRAM`:'No GPU detected')+(h.ram_mb?` · ${h.ram_mb} MB RAM`:'')+(s.model_loaded?' · model loaded':'');
+  $('dur').max=s.params.max_duration;
+  $('eff').textContent=`Effective: max ${s.params.max_duration}s, chunk ${s.params.chunk_seconds}s, offload ${s.params.offload}, int8 ${s.params.quantize}`;
+  backends=s.backends;
+}
+async function loadSettings(){
+  const [s,st]=await Promise.all([api('/api/settings'),api('/api/status')]);showStatus(st);
+  $('backend').innerHTML=st.backends.map(b=>`<option value="${b.id}" ${b.available?'':'disabled'}>${esc(b.name)}${b.available?'':' (not installed)'}</option>`).join('');
+  $('backend').value=s.backend;
+  $('s_mode').value=s.memory_mode||'auto';$('s_seed').value=s.seed??'';$('s_steps').value=s.steps;
+  const o=s.overrides||{};$('s_max').value=o.max_duration??'';$('s_chunk').value=o.chunk_seconds??'';$('s_ov').value=o.overlap_seconds??'';
+  $('s_off').value=o.offload==null?'':String(o.offload);$('s_q').value=o.quantize==null?'':String(o.quantize);
+  $('s_fmt').value=s.output_format;$('s_idle').value=s.idle_unload_seconds;
+}
+const num=id=>$(id).value===''?null:Number($(id).value),tri=id=>$(id).value===''?null:$(id).value==='true';
+$('save').onclick=async()=>{
+  try{showStatus(await post('/api/settings',{backend:$('backend').value,memory_mode:$('s_mode').value,seed:$('s_seed').value,
+    steps:num('s_steps')||60,idle_unload_seconds:num('s_idle')??120,output_format:$('s_fmt').value,
+    overrides:{max_duration:num('s_max'),chunk_seconds:num('s_chunk'),overlap_seconds:num('s_ov'),offload:tri('s_off'),quantize:tri('s_q')}}));
+  }catch(e){alert(e.message)}};
+$('backend').onchange=()=>post('/api/settings',{backend:$('backend').value}).then(showStatus);
+$('unload').onclick=()=>post('/api/unload',{}).then(()=>api('/api/status')).then(showStatus);
+
+$('go').onclick=async()=>{
+  $('result').innerHTML='';$('msg').textContent='';
+  try{const j=await post('/api/generate',{prompt:$('prompt').value,lyrics:$('lyrics').value,duration:+$('dur').value});
+    cur=j.id;$('go').disabled=true;$('cancel').disabled=false;timer=setInterval(poll,1000);poll();
+  }catch(e){$('msg').innerHTML=`<span class="err">${esc(e.message)}</span>`}};
+$('cancel').onclick=()=>cur&&post('/api/cancel',{id:cur});
+async function poll(){
+  const j=await api('/api/jobs/'+cur);$('pb').style.width=(j.progress*100)+'%';
+  $('msg').textContent=`${j.status} — ${j.message} (seed ${j.seed})`;
+  if(['done','error','cancelled'].includes(j.status)){
+    clearInterval(timer);$('go').disabled=false;$('cancel').disabled=true;
+    if(j.status==='error')$('msg').innerHTML=`<span class="err">${esc(j.error)}</span>`;
+    if(j.status==='done')$('result').innerHTML=player(j.id);
+    loadHist();api('/api/status').then(showStatus);
+  }}
+const player=id=>`<audio controls src="/audio/${id}.wav"></audio><p><a href="/audio/${id}.wav?download=1">Save WAV</a> · <a href="/audio/${id}.mp3?download=1">Save MP3</a></p>`;
+async function loadHist(){
+  const h=await api('/api/history');
+  $('hist').innerHTML=h.length?h.map(x=>`<div class="hist"><div class="t"><div>${esc(x.prompt)}</div>
+   <div class="mut">${new Date(x.created*1000).toLocaleString()} · ${x.duration}s · ${x.mode} · seed ${x.seed} · ${x.status}${x.error?' · '+esc(x.error.slice(0,80)):''}</div></div>
+   ${x.status==='done'?`<a href="#" data-p="${x.id}">▶</a><a href="/audio/${x.id}.wav?download=1">WAV</a><a href="/audio/${x.id}.mp3?download=1">MP3</a>`:''}
+   <a href="#" data-r="${x.id}" data-pr="${esc(x.prompt)}" data-ly="${esc(x.lyrics)}" data-s="${x.seed}">↻</a><a href="#" data-d="${x.id}">✕</a></div>`).join(''):'<div class="mut">Nothing yet.</div>';
+}
+$('hist').onclick=async e=>{const a=e.target.closest('a');if(!a)return;
+  if(a.dataset.p){e.preventDefault();$('result').innerHTML=player(a.dataset.p);scrollTo(0,0)}
+  if(a.dataset.r){e.preventDefault();$('prompt').value=a.dataset.pr;$('lyrics').value=a.dataset.ly;$('s_seed').value=a.dataset.s;scrollTo(0,0)}
+  if(a.dataset.d){e.preventDefault();if(confirm('Delete this song and its files?')){await api('/api/history/'+a.dataset.d,{method:'DELETE'});loadHist()}}};
+loadSettings();loadHist();
+</script></body></html>
