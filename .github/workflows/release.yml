@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - name: Build portable exe
-        timeout-minutes: 30
+        timeout-minutes: 20
         shell: pwsh
         run: ./packaging/windows/build.ps1 *>&1 | Tee-Object -FilePath build.log
       - name: Report build tail on failure
