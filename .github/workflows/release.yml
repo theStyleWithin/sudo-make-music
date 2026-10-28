@@ -80,9 +80,11 @@ jobs:
         run: |
           t=$(tail -n 40 build.log 2>/dev/null | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=android build tail::$t"
-      - run: ls -la bin/
+      - run: |
+          ls -la bin/
+          cp "$(ls bin/*.apk | head -n 1)" sudo-make-music-android.apk
       - uses: actions/upload-artifact@v4
-        with: { name: android-apk, path: 'bin/*.apk' }
+        with: { name: android-apk, path: sudo-make-music-android.apk }
 
   release:
     # Publish whatever built: one failing platform must not block the others.
@@ -91,15 +93,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:
+      - name: Check the release tag looks like v1.0.0
+        if: github.event.inputs.release_tag != ''
+        env:
+          TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error title=Bad release tag::The release tag must look like v1.0.0 (got '$TAG'). Nothing was published."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
       - name: Checksums
         run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+      - name: Publish release
+        id: rel1
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: sudo make music ${{ github.event.inputs.release_tag || github.ref_name }}
           body_path: docs/RELEASE_NOTES_1.0.md
+          draft: false
+          files: out/*
+      - name: Publish release (retry once - uploads can fail transiently)
+        if: steps.rel1.outcome == 'failure'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: sudo make music ${{ github.event.inputs.release_tag || github.ref_name }}
+          body_path: docs/RELEASE_NOTES_1.0.md
+          draft: false
           files: out/*

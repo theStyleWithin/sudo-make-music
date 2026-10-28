@@ -8,7 +8,7 @@ every model is a local, swappable folder.
 |---|---|---|
 | `sudo-make-music-x86_64.AppImage` | Linux x86_64 | `chmod +x` and run. Needs FUSE (or run with `--appimage-extract-and-run`). |
 | `sudo-make-music-portable.exe` | Windows 10/11 | Single file; data is kept in a `sudo-make-music-data` folder next to it. Unsigned: SmartScreen will warn. |
-| `*.apk` | Android (arm64) | **Debug-signed** build, install from outside the store. UI only for now: see limits. |
+| `sudo-make-music-android.apk` | Android (arm64) | **Debug-signed** build, install from outside the store. UI only for now: see limits. |
 | `SHA256SUMS.txt` | | Checksums for the files above. |
 
 Arch/CachyOS (AUR) and Flathub packages are prepared in `packaging/` with handoff instructions in `docs/packaging/`.
