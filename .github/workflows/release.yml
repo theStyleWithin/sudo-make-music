@@ -43,14 +43,25 @@ jobs:
 
   android:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with: { command: buildozer android debug, buildozer_version: stable }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: System packages for python-for-android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential ccache libltdl-dev
+      - run: pip install buildozer 'cython<3.1' setuptools wheel
+      - name: Build debug APK
+        run: buildozer -v android debug
+      - run: ls -la bin/
       - uses: actions/upload-artifact@v4
-        with: { name: android-apk, path: '${{ steps.buildozer.outputs.filename }}' }
+        with: { name: android-apk, path: 'bin/*.apk' }
 
   release:
     # Publish whatever built: one failing platform must not block the others.
