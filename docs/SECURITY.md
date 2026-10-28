@@ -23,6 +23,11 @@ The app itself contains no network code. Network is used only when *you* trigger
 - It is **unsigned** (code-signing certificates cost money), so SmartScreen warns and reputation systems have no history yet.
 - The in-app installer downloads and runs `pip`, which can look like a "downloader" to behaviour-based engines.
 
+What is done about it: the exe has an icon and version information; no UPX packer is used; unused modules are excluded; CI tries to compile
+PyInstaller's bootloader from source (the stock prebuilt one is shared with lots of malware, so some engines match it by signature); an
+unpacked **folder build** is published as a zip (no self-extracting exe); every Windows build must pass `--selfcheck` in CI. Code signing
+is prepared but needs a certificate (`docs/SIGNING.md`).
+
 If you see detections: compare the SHA-256 on VirusTotal with `SHA256SUMS.txt` in the release; the exe is built from this
 public source by public CI, so the build is auditable. Report false positives to the vendors (most have a submission form).
 Do not run builds from anywhere except the official release page.

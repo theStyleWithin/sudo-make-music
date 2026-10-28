@@ -20,7 +20,7 @@ VSVersionInfo(
         StringStruct('FileVersion', '1.0.0.0'),
         StringStruct('InternalName', 'sudo-make-music'),
         StringStruct('LegalCopyright', 'Public domain (Unlicense)'),
-        StringStruct('OriginalFilename', 'sudo-make-music-portable.exe'),
+        StringStruct('OriginalFilename', 'sudo-make-music.exe'),
         StringStruct('ProductName', 'sudo make music'),
         StringStruct('ProductVersion', '1.0.0.0'),
         StringStruct('Comments', 'https://github.com/theStyleWithin/sudo-make-music')

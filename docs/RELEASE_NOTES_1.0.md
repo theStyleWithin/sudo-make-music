@@ -7,7 +7,8 @@ every model is a local, swappable folder.
 | File | Platform | Notes |
 |---|---|---|
 | `sudo-make-music-x86_64.AppImage` | Linux x86_64 | `chmod +x` and run. Needs FUSE (or run with `--appimage-extract-and-run`). |
-| `sudo-make-music-portable.exe` | Windows 10/11 | Single file; data is kept in a `sudo-make-music-data` folder next to it. Unsigned: SmartScreen will warn. |
+| `sudo-make-music-portable.exe` | Windows 10/11 | Single file; data is kept in a `sudo-make-music-data` folder next to it. Unsigned: SmartScreen will warn. Built with a bootloader compiled in CI where possible. |
+| `sudo-make-music-windows-folder.zip` | Windows 10/11 | Same app unpacked as a folder (unzip, run `sudo-make-music.exe`). **Try this one if your antivirus flags the single exe**: it does not self-extract, which scanners dislike. |
 | `sudo-make-music-android.apk` | Android (arm64) | **Debug-signed** build, install from outside the store. UI only for now: see limits. |
 | `SHA256SUMS.txt` | | Checksums for the files above. |
 

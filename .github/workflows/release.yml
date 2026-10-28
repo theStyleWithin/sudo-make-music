@@ -38,23 +38,52 @@ jobs:
   windows:
     needs: test
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
+    env:
+      # Code signing switches on automatically once these two repository secrets exist (see docs/SIGNING.md).
+      HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Build portable exe
-        timeout-minutes: 20
+      - name: Build portable exe + folder build
+        timeout-minutes: 45
         shell: pwsh
         run: ./packaging/windows/build.ps1 *>&1 | Tee-Object -FilePath build.log
-      - name: Self-check the built exe (it must really run)
+      - name: Sign (only when a certificate is configured)
+        if: env.HAS_CERT == 'true'
+        shell: pwsh
+        env:
+          CERT_B64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PW: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:CERT_B64))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+          foreach ($f in 'dist\sudo-make-music-portable.exe', 'dist\sudo-make-music\sudo-make-music.exe') {
+            & $signtool sign /f cert.pfx /p $env:CERT_PW /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "sudo make music" $f
+            if ($LASTEXITCODE -ne 0) { throw "signing failed for $f" }
+            & $signtool verify /pa $f
+            if ($LASTEXITCODE -ne 0) { throw "signature verification failed for $f" }
+          }
+          Remove-Item cert.pfx
+      - name: Note that the build is unsigned
+        if: env.HAS_CERT != 'true'
+        run: echo "::notice title=unsigned::No code-signing certificate is configured; the Windows files are UNSIGNED (SmartScreen will warn)."
+      - name: Self-check both builds (they must really run)
         timeout-minutes: 10
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath ./dist/sudo-make-music-portable.exe -ArgumentList '--selfcheck','selfcheck.txt' -Wait -PassThru
-          $report = if (Test-Path selfcheck.txt) { (Get-Content selfcheck.txt) -join '%0A' } else { 'no report was written: the exe did not start' }
-          Write-Host "::notice title=windows exe selfcheck::$report"
-          if ($p.ExitCode -ne 0 -or -not (Test-Path selfcheck.txt)) { Write-Host "::error title=windows exe selfcheck FAILED::$report"; exit 1 }
+          $fail = $false
+          foreach ($t in @(@('dist\sudo-make-music-portable.exe', 'selfcheck-portable.txt'), @('dist\sudo-make-music\sudo-make-music.exe', 'selfcheck-folder.txt'))) {
+            $p = Start-Process -FilePath ("./" + $t[0]) -ArgumentList '--selfcheck', $t[1] -Wait -PassThru
+            $report = if (Test-Path $t[1]) { (Get-Content $t[1]) -join '%0A' } else { 'no report was written: the exe did not start' }
+            Write-Host "::notice title=selfcheck $($t[0])::$report"
+            if ($p.ExitCode -ne 0 -or -not (Test-Path $t[1])) { Write-Host "::error title=selfcheck FAILED $($t[0])::$report"; $fail = $true }
+          }
+          if ($fail) { exit 1 }
+      - name: Zip the folder build
+        shell: pwsh
+        run: Compress-Archive -Path dist\sudo-make-music -DestinationPath dist\sudo-make-music-windows-folder.zip
       - name: Report build tail on failure
         if: failure() || cancelled()
         shell: pwsh
@@ -62,7 +91,12 @@ jobs:
           $t = (Get-Content build.log -Tail 40 -ErrorAction SilentlyContinue) -join '%0A'
           Write-Host "::error title=windows build tail::$t"
       - uses: actions/upload-artifact@v4
-        with: { name: windows-portable, path: dist/sudo-make-music-portable.exe }
+        with:
+          name: windows
+          path: |
+            dist/sudo-make-music-portable.exe
+            dist/sudo-make-music-windows-folder.zip
+          if-no-files-found: error
 
   android:
     needs: test
