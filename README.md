@@ -27,6 +27,10 @@ MP3 export uses `ffmpeg` if on PATH, else `lameenc`.
 | `stableaudio_litert` (default on Android) | same model as LiteRT `.tflite` | phones / no PyTorch | converted model files, see `docs/STABLE_AUDIO_LITERT.md` |
 | `mock` | sine synth | testing | nothing |
 
+## Security and privacy
+
+No API keys, accounts, telemetry or cloud: see [`docs/SECURITY.md`](docs/SECURITY.md) for exactly what the app does on your network and disk and why antivirus tools sometimes flag the Windows exe.
+
 ## Windows status (please read)
 
 The maintainer does **not** use or test Windows. The portable `.exe` is provided as a courtesy and is **community-tested**: CI builds it and runs
