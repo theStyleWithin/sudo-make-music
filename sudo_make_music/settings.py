@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from dataclasses import dataclass, field, asdict
 
@@ -11,7 +12,7 @@ from .memory import MODES, OVERRIDABLE
 
 @dataclass
 class Settings:
-    backend: str = "acestep"
+    backend: str = field(default_factory=lambda: "stableaudio_litert" if os.environ.get("ANDROID_ARGUMENT") else "acestep")
     speech_backend: str = "chatterbox"  # talk mode
     separator_backend: str = "demucs"   # re-voice: split vocals from backing
     converter_backend: str = "openvoice"  # re-voice: change the singer

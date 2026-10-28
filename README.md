@@ -18,6 +18,15 @@ Try it with no GPU/model first: pick **Mock synth** as the backend (verifies chu
 First ACE-Step generation downloads weights (~7GB) into `~/.local/share/sudo-make-music/models/ace-step`; after that, offline.
 MP3 export uses `ffmpeg` if on PATH, else `lameenc`.
 
+## Models at a glance (all local, all swappable)
+
+| Backend | What it is | Good for | Needs |
+|---|---|---|---|
+| `acestep` (default on desktop) | 3.5B diffusion model, lyrics, up to 4 min/clip | real songs with vocals | ~6GB VRAM (or CPU, slow) |
+| `stableaudio` | Stable Audio Open Small, PyTorch | fast short instrumental clips/loops, very low VRAM, no lyrics | `stable-audio-tools` |
+| `stableaudio_litert` (default on Android) | same model as LiteRT `.tflite` | phones / no PyTorch | converted model files, see `docs/STABLE_AUDIO_LITERT.md` |
+| `mock` | sine synth | testing | nothing |
+
 ## Install options
 
 It is a native desktop app (Kivy), not a web app. The same code is built for Android.
