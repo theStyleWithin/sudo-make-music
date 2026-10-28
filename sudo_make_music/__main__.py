@@ -6,6 +6,8 @@ from . import runtime
 
 
 def main() -> None:
+    from .stdio import ensure_std_streams
+    ensure_std_streams()
     os.environ.setdefault("KIVY_NO_ARGS", "1")     # Kivy must not parse (and reject) our own command-line options
     ap = argparse.ArgumentParser(prog="sudo-make-music", description="Offline AI music generation")
     ap.add_argument("--install-backend", nargs="?", const="cu126", metavar="CUDA",

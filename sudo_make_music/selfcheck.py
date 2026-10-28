@@ -41,7 +41,11 @@ def run() -> tuple[bool, list[str]]:
         try:
             lines.append(f"[ok]   {name}: {fn()}")
         except BaseException as e:                     # SystemExit included (Kivy quits without OpenGL)
+            import traceback
+            tb = traceback.format_exc().strip().splitlines()
+            tail = tb[-8:] if len(tb) > 8 else tb         # enough to see where a failure started
             lines.append(f"[{'FAIL' if fatal else 'skip'}] {name}: {type(e).__name__}: {e}")
+            lines.extend("         " + t for t in tail)
             ok = ok and not fatal
 
     def numpy_ok():
