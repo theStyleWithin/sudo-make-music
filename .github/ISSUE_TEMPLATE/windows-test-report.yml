@@ -1,0 +1,41 @@
+name: Windows test report
+description: Tell us whether the Windows build works on your PC (the maintainer does not test Windows)
+title: "Windows: "
+labels: ["windows", "community-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing! The maintainer does not use Windows, so reports from you are how this build gets verified.
+        Please run `sudo-make-music-portable.exe --selfcheck selfcheck.txt` in a terminal (it writes `selfcheck.txt` next to the exe) and paste the file below.
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2 / Windows 10 22H2
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: App version / release
+      placeholder: v1.0.0
+    validations: { required: true }
+  - type: dropdown
+    id: started
+    attributes:
+      label: Did the app start?
+      options: ["Yes, window opened", "SmartScreen blocked it, I ran it anyway and it worked", "Antivirus removed/blocked it", "Crashed or closed immediately", "Other (explain below)"]
+    validations: { required: true }
+  - type: textarea
+    id: selfcheck
+    attributes:
+      label: Output of --selfcheck
+      render: text
+  - type: input
+    id: virustotal
+    attributes:
+      label: VirusTotal / antivirus result (link or summary)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else (GPU, what you tried, errors)

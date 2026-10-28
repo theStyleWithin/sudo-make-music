@@ -11,6 +11,12 @@ every model is a local, swappable folder.
 | `sudo-make-music-android.apk` | Android (arm64) | **Debug-signed** build, install from outside the store. UI only for now: see limits. |
 | `SHA256SUMS.txt` | | Checksums for the files above. |
 
+### Windows: community-tested, please report
+The maintainer does not use Windows and does **not** test the Windows build. It is offered as a courtesy so Windows users are not left out.
+CI builds it and runs a built-in self-check (`--selfcheck`) on the finished exe, but nobody has used it on a real Windows PC. If you try it,
+please open an issue with the "Windows test report" form: your Windows version, whether it started, your antivirus/VirusTotal result, and the
+output of `sudo-make-music-portable.exe --selfcheck selfcheck.txt` (the report file is written next to the exe). Windows help from the community is very welcome.
+
 Arch/CachyOS (AUR) and Flathub packages are prepared in `packaging/` with handoff instructions in `docs/packaging/`.
 Not every file above exists on every release: whatever failed to build in CI is simply missing from the list.
 

@@ -27,6 +27,13 @@ MP3 export uses `ffmpeg` if on PATH, else `lameenc`.
 | `stableaudio_litert` (default on Android) | same model as LiteRT `.tflite` | phones / no PyTorch | converted model files, see `docs/STABLE_AUDIO_LITERT.md` |
 | `mock` | sine synth | testing | nothing |
 
+## Windows status (please read)
+
+The maintainer does **not** use or test Windows. The portable `.exe` is provided as a courtesy and is **community-tested**: CI builds it and runs
+`sudo-make-music-portable.exe --selfcheck` on it (a quick test that needs no GPU or model), but no one has used it on a real PC. Windows testers and
+maintainers are welcome: open an issue with the **Windows test report** form (attach the output of `--selfcheck selfcheck.txt`).
+The exe is unsigned, so SmartScreen will warn, and some antivirus engines flag PyInstaller exes: check it with VirusTotal if in doubt.
+
 ## Install options
 
 It is a native desktop app (Kivy), not a web app. The same code is built for Android.

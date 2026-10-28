@@ -47,6 +47,14 @@ jobs:
         timeout-minutes: 20
         shell: pwsh
         run: ./packaging/windows/build.ps1 *>&1 | Tee-Object -FilePath build.log
+      - name: Self-check the built exe (it must really run)
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ./dist/sudo-make-music-portable.exe -ArgumentList '--selfcheck','selfcheck.txt' -Wait -PassThru
+          $report = if (Test-Path selfcheck.txt) { (Get-Content selfcheck.txt) -join '%0A' } else { 'no report was written: the exe did not start' }
+          Write-Host "::notice title=windows exe selfcheck::$report"
+          if ($p.ExitCode -ne 0 -or -not (Test-Path selfcheck.txt)) { Write-Host "::error title=windows exe selfcheck FAILED::$report"; exit 1 }
       - name: Report build tail on failure
         if: failure() || cancelled()
         shell: pwsh
