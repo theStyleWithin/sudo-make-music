@@ -3,6 +3,11 @@ on:
   push: { branches: [main], tags: ['v*'] }
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a release with this tag (e.g. v1.0.0) after building. Leave empty to only build.'
+        required: false
+        default: ''
 
 jobs:
   test:
@@ -81,7 +86,7 @@ jobs:
 
   release:
     # Publish whatever built: one failing platform must not block the others.
-    if: startsWith(github.ref, 'refs/tags/v') && always() && needs.test.result == 'success'
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release_tag != '') && always() && needs.test.result == 'success'
     needs: [test, appimage, windows, android]
     runs-on: ubuntu-latest
     permissions: { contents: write }
@@ -93,6 +98,8 @@ jobs:
         run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
-          name: sudo make music ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: sudo make music ${{ github.event.inputs.release_tag || github.ref_name }}
           body_path: docs/RELEASE_NOTES_1.0.md
           files: out/*
