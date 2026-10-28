@@ -75,16 +75,28 @@ jobs:
       - name: Build debug APK
         timeout-minutes: 60
         run: buildozer -v android debug 2>&1 | tee build.log
-      - name: Report build tail on failure
-        if: failure() || cancelled()
+      - name: Show build tail and bin/ (always)
+        if: always()
         run: |
-          t=$(tail -n 40 build.log 2>/dev/null | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::error title=android build tail::$t"
-      - run: |
-          ls -la bin/
-          cp "$(ls bin/*.apk | head -n 1)" sudo-make-music-android.apk
+          t=$(tail -n 30 build.log 2>/dev/null | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          l=$(ls -la bin 2>&1 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=android build tail::$t"
+          echo "::notice title=android bin/::$l"
+      - name: Collect the APK
+        run: |
+          apk=$(find bin -maxdepth 2 -name '*.apk' 2>/dev/null | head -n 1)
+          if [ -z "$apk" ]; then apk=$(find .buildozer -name '*debug*.apk' -not -path '*/intermediates/*' 2>/dev/null | head -n 1); fi
+          echo "apk=$apk"
+          if [ -z "$apk" ]; then
+            echo "::error title=No APK produced::buildozer finished but no .apk file was found"
+            exit 1
+          fi
+          cp "$apk" sudo-make-music-android.apk
       - uses: actions/upload-artifact@v4
-        with: { name: android-apk, path: sudo-make-music-android.apk }
+        with:
+          name: android-apk
+          path: sudo-make-music-android.apk
+          if-no-files-found: error
 
   release:
     # Publish whatever built: one failing platform must not block the others.
