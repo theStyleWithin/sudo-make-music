@@ -1,6 +1,4 @@
-import json
 import time
-import urllib.request
 import wave
 
 import pytest
@@ -94,45 +92,6 @@ def test_mp3_export(engine):
     job = wait(engine, engine.submit("test", "", 10))
     assert job.status == "done", job.error
     assert engine.output_path(job.id, "mp3").stat().st_size > 1000
-
-
-def test_http_api(engine):
-    from http.server import ThreadingHTTPServer
-    import threading
-    from sudo_make_music.server import make_handler
-
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(engine))
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{srv.server_port}"
-    st = json.load(urllib.request.urlopen(base + "/api/status"))
-    assert st["mode"] == "safe" and any(b["id"] == "mock" for b in st["backends"])
-    assert b"sudo make music" in urllib.request.urlopen(base + "/").read()
-    req = urllib.request.Request(base + "/api/generate", json.dumps({"prompt": "x", "duration": 10}).encode(),
-                                 {"Content-Type": "application/json"})
-    jid = json.load(urllib.request.urlopen(req))["id"]
-    wait(engine, engine.jobs[jid])
-    assert urllib.request.urlopen(f"{base}/audio/{jid}.wav").read()[:4] == b"RIFF"
-    assert len(json.load(urllib.request.urlopen(base + "/api/history"))) == 1
-    srv.shutdown()
-
-
-def test_token_auth(engine):
-    import urllib.error
-    from http.server import ThreadingHTTPServer
-    import threading
-    from sudo_make_music.server import make_handler
-
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(engine, token="s3cret"))
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{srv.server_port}"
-    with pytest.raises(urllib.error.HTTPError) as e:
-        urllib.request.urlopen(base + "/api/status")
-    assert e.value.code == 401
-    r = urllib.request.urlopen(base + "/api/status?token=s3cret")
-    assert "smm_token=s3cret" in r.headers["Set-Cookie"]
-    req = urllib.request.Request(base + "/api/status", headers={"Cookie": "smm_token=s3cret"})
-    assert urllib.request.urlopen(req).status == 200
-    srv.shutdown()
 
 
 def test_install_commands():

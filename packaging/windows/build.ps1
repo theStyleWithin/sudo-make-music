@@ -2,8 +2,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..\..")
 python -m pip install --upgrade pip pyinstaller
-python -m pip install .
-python -m PyInstaller --noconfirm --onefile --name sudo-make-music-portable `
-  --collect-all pip --collect-all sudo_make_music `
-  --distpath dist --workpath build\pyinstaller packaging\windows\launcher.py
+python -m pip install ".[windows]"
+python -m PyInstaller --noconfirm --distpath dist --workpath build\pyinstaller packaging\windows\sudo-make-music.spec
 Write-Host "built dist\sudo-make-music-portable.exe"

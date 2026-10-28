@@ -4,23 +4,52 @@ runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 command: sudo-make-music
 finish-args:
-  - --share=network        # first-run backend + model download; local web UI on 127.0.0.1
-  - --device=all           # GPU access (CUDA needs the host NVIDIA driver via the GL extension)
-  - --filesystem=xdg-music # optional: save songs where users keep music
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --socket=pulseaudio
+  - --device=all            # GPU access (CUDA also needs the host NVIDIA driver via the GL extension)
+  - --share=network         # only for the one-time AI backend + model download
+  - --filesystem=xdg-music  # save exported songs to ~/Music
 modules:
-  - name: numpy
+  - name: python-deps
     buildsystem: simple
     build-commands:
-      - pip3 install --verbose --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} --no-deps numpy
+      - pip3 install --verbose --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} --no-deps kivy numpy kivy-garden docutils filetype pygments requests charset-normalizer idna urllib3 certifi
     sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/78/04/b00303f94bd6bc1a2cff274110ea843f9976c9b4f7b2eb7af87ddf49481e/Kivy-2.3.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        sha256: 950d17e275f817ca34cc7c9d55f9d229067e2f7fbd0fad985a74c94893f7e739
       - type: file
         url: https://files.pythonhosted.org/packages/da/24/3bd070f3269dc609d8f26b2643f62ef91bb415841c0b294805aaf7fe06da/numpy-2.5.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
         sha256: 6ffa07666f8da0eef81d149934a626d0d95fbd6838432a33e66245423a9062c0
-        only-arches: [x86_64]
       - type: file
-        url: https://files.pythonhosted.org/packages/db/b6/135bb0953b61dc21c6cafa14b424ae666944e4899cf140e00c2b322a1a45/numpy-2.5.4-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
-        sha256: 1c2e71b04c6cad90026e544501bbe0ab9290fa8a4d845e7e8c0d124fb429c988
-        only-arches: [aarch64]
+        url: https://files.pythonhosted.org/packages/6a/55/cd1555bde62f809219cbc5d8a0836b0293399da2f4ba4e8ee84b6a7cc393/Kivy_Garden-0.1.5-py3-none-any.whl
+        sha256: ef50f44b96358cf10ac5665f27a4751bb34ef54051c54b93af891f80afe42929
+      - type: file
+        url: https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl
+        sha256: 25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea
+      - type: file
+        url: https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl
+        sha256: 7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25
+      - type: file
+        url: https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl
+        sha256: 2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9
+      - type: file
+        url: https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl
+        sha256: 2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+      - type: file
+        url: https://files.pythonhosted.org/packages/4b/85/41d27f234b82e47c167a5f6c0f62501dc0c640585ff4aba79e08a390336a/charset_normalizer-3.5.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+        sha256: 7218e8f32b0956cfcd048fd42d9d5779809745ca1d86113ca56f66e7ae1549c4
+      - type: file
+        url: https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl
+        sha256: ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+      - type: file
+        url: https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl
+        sha256: 0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+      - type: file
+        url: https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl
+        sha256: e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
 
   - name: sudo-make-music
     buildsystem: simple
@@ -32,7 +61,6 @@ modules:
         #!/bin/sh
         PYV=$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])')
         export PYTHONPATH=/app/lib/sudo-make-music:/app/lib/python$PYV/site-packages${PYTHONPATH:+:$PYTHONPATH}
-        export SUDO_MAKE_MUSIC_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/sudo-make-music"
         exec python3 -m sudo_make_music "$@"
         WRAP
       - install -Dm755 sudo-make-music ${FLATPAK_DEST}/bin/sudo-make-music
@@ -43,5 +71,4 @@ modules:
       - type: git
         url: https://github.com/theStyleWithin/sudo-make-music.git
         tag: v0.1.0
-        # Flathub requires the commit too; fill in with: git rev-parse v0.1.0
-        # commit: <FILL ME>
+        # Flathub requires the commit too: set `commit:` to the output of `git rev-parse v0.1.0`

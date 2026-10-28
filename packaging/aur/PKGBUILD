@@ -6,7 +6,7 @@ pkgdesc='Offline AI music generation for mid-range PCs (6GB VRAM friendly)'
 arch=('any')
 url='https://github.com/theStyleWithin/sudo-make-music'
 license=('Unlicense')
-depends=('python' 'python-numpy' 'python-pip')
+depends=('python' 'python-numpy' 'python-pip' 'python-kivy' 'python-pillow' 'sdl2_mixer')
 makedepends=('git' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 optdepends=('ffmpeg: MP3 export'
             'nvidia-utils: NVIDIA GPU support for the AI backend')

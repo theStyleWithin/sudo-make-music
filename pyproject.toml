@@ -8,23 +8,24 @@ version = "0.1.0"
 description = "Offline AI music generation for mid-range PCs (6GB VRAM friendly)"
 requires-python = ">=3.10"
 license = { text = "Unlicense" }
-dependencies = ["numpy>=1.24"]
+dependencies = ["numpy>=1.24", "kivy>=2.3"]
 
 [project.optional-dependencies]
 # Real backend. Install torch for your CUDA first (see README).
 acestep = ["torch", "torchaudio", "soundfile", "ace-step @ git+https://github.com/ace-step/ACE-Step.git"]
 quant = ["torchao"]
 mp3 = ["lameenc"]
+windows = ["kivy[base]>=2.3"]
 dev = ["pytest"]
 
 [project.scripts]
 sudo-make-music = "sudo_make_music.__main__:main"
 
+[project.gui-scripts]
+sudo-make-music-gui = "sudo_make_music.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["sudo_make_music*"]
-
-[tool.setuptools.package-data]
-sudo_make_music = ["web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -11,24 +11,26 @@ python -m venv .venv && source .venv/bin/activate
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 # 2. the app + default backend (+ optional int8 quantization, mp3 fallback)
 pip install -e '.[acestep,quant,mp3]'
-sudo-make-music            # -> http://127.0.0.1:7860
+sudo-make-music            # opens the desktop window
 ```
 
-Try it with no GPU/model first: pick **Mock synth** as the backend in the UI (verifies chunking, export, history).
+Try it with no GPU/model first: pick **Mock synth** as the backend (verifies chunking, export, history).
 First ACE-Step generation downloads weights (~7GB) into `~/.local/share/sudo-make-music/models/ace-step`; after that, offline.
 MP3 export uses `ffmpeg` if on PATH, else `lameenc`.
 
 ## Install options
 
+It is a native desktop app (Kivy), not a web app. The same code is built for Android.
+
 | Platform | How | Status |
 |---|---|---|
-| Linux AppImage | download `sudo-make-music-x86_64.AppImage` from Releases, `chmod +x`, run | built by CI; not yet run by the author |
+| Linux AppImage | download from Releases, `chmod +x`, run | built by CI; not yet run by the author |
 | Windows portable | `sudo-make-music-portable.exe` (data kept next to the exe) | built by CI; untested |
-| Android | `sudo-make-music-android.apk` - **remote client** for the PC app on your Wi-Fi (`sudo-make-music --host 0.0.0.0`, then enter the printed URL). The model can't run on a phone. | built by CI; untested |
-| Arch / CachyOS | AUR `sudo-make-music-git` | package ready in `packaging/aur`, handed off |
-| Flathub | `io.github.theStyleWithin.SudoMakeMusic` | manifest ready in `packaging/flatpak`, handed off |
+| Android | `sudo-make-music-android.apk` - **standalone, on-device**. See `docs/ANDROID.md`: the UI port is done, but the phone-capable AI model is not yet. | built by CI; untested |
+| Arch / CachyOS | AUR `sudo-make-music-git` | package in `packaging/aur`, handed off |
+| Flathub | `io.github.theStyleWithin.SudoMakeMusic` | manifest in `packaging/flatpak`, handed off |
 
-Packages ship only the light app. On first run use **AI backend install** in the UI (or `sudo-make-music --install-backend cu126`) to download PyTorch + ACE-Step once (several GB); models download on first generation; then it's offline. Packagers: see `docs/packaging/HANDOFF.md`.
+Desktop packages ship only the light app. On first run use **Settings > Install PyTorch + ACE-Step** (or `sudo-make-music --install-backend cu126`) once (several GB); models download on first generation; then it's offline. Packagers: see `docs/packaging/HANDOFF.md`.
 
 ## How long songs fit in 6GB
 
@@ -63,6 +65,6 @@ Subclass `ModelBackend` (`backends/base.py`): implement `load`, `generate_segmen
 
 ## Tests
 
-`pip install -e '.[dev]' && pytest`
+`pip install -e '.[dev]' && pytest`; headless UI check: `xvfb-run -a python tests/ui_smoke.py /tmp/shots` (saves screenshots).
 
 Public domain (Unlicense).

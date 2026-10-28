@@ -22,7 +22,7 @@ cat > "$A/AppRun" <<'RUN'
 HERE="$(dirname "$(readlink -f "$0")")"
 export PYTHONPATH="$HERE/usr/app${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONNOUSERSITE=1
-exec "$HERE/usr/python/bin/python3" -m sudo_make_music --open "$@"
+exec "$HERE/usr/python/bin/python3" -m sudo_make_music "$@"
 RUN
 chmod +x "$A/AppRun"
 C=$ROOT/packaging/common

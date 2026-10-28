@@ -7,7 +7,5 @@ if len(sys.argv) > 2 and sys.argv[1] == "--run-module":   # used by runtime.py t
     sys.argv = [mod] + sys.argv[3:]
     runpy.run_module(mod, run_name="__main__", alter_sys=True)
 else:
-    if len(sys.argv) == 1:
-        sys.argv.append("--open")      # double-click: open the UI in the browser
     from sudo_make_music.__main__ import main
     main()
