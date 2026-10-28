@@ -114,3 +114,30 @@ def test_http_api(engine):
     assert urllib.request.urlopen(f"{base}/audio/{jid}.wav").read()[:4] == b"RIFF"
     assert len(json.load(urllib.request.urlopen(base + "/api/history"))) == 1
     srv.shutdown()
+
+
+def test_token_auth(engine):
+    import urllib.error
+    from http.server import ThreadingHTTPServer
+    import threading
+    from sudo_make_music.server import make_handler
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(engine, token="s3cret"))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(base + "/api/status")
+    assert e.value.code == 401
+    r = urllib.request.urlopen(base + "/api/status?token=s3cret")
+    assert "smm_token=s3cret" in r.headers["Set-Cookie"]
+    req = urllib.request.Request(base + "/api/status", headers={"Cookie": "smm_token=s3cret"})
+    assert urllib.request.urlopen(req).status == 200
+    srv.shutdown()
+
+
+def test_install_commands():
+    from sudo_make_music import runtime
+    cmds = runtime.install_commands("cpu")
+    assert "--target" in cmds[0] and "whl/cpu" in " ".join(cmds[0])
+    with pytest.raises(ValueError):
+        runtime.install_commands("bogus")

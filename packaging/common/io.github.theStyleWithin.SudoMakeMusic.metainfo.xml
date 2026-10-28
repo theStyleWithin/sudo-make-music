@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.theStyleWithin.SudoMakeMusic</id>
+  <name>sudo make music</name>
+  <summary>Offline AI music generation for mid-range PCs</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Unlicense</project_license>
+  <developer id="io.github.theStyleWithin"><name>theStyleWithin</name></developer>
+  <description>
+    <p>Generate songs with a local AI model, fully offline after the one-time model download. Tuned for GPUs with around 6GB of VRAM: long songs are generated in chunks, crossfaded and streamed to disk, with CPU offload, quantization and automatic unloading of the model when idle.</p>
+    <p>No cloud services and no content filter. The model backend is swappable.</p>
+  </description>
+  <launchable type="desktop-id">io.github.theStyleWithin.SudoMakeMusic.desktop</launchable>
+  <url type="homepage">https://github.com/theStyleWithin/sudo-make-music</url>
+  <url type="bugtracker">https://github.com/theStyleWithin/sudo-make-music/issues</url>
+  <categories><category>AudioVideo</category><category>Audio</category></categories>
+  <content_rating type="oars-1.1"/>
+  <releases><release version="0.1.0" date="2026-10-28"/></releases>
+</component>

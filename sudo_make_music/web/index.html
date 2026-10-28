@@ -60,6 +60,14 @@ audio{width:100%;margin-top:8px}
   <div class="mut">Batch size is fixed at 1. Blank fields use the memory-mode default.</div>
 </details>
 
+<details class="card" id="inst"><summary>AI backend install (one-time download, needs internet)</summary>
+  <p class="mut">Installs PyTorch + ACE-Step into your user folder (several GB). Models download on first generation. After that everything runs offline.</p>
+  <div class="row"><div><label>GPU library</label><select id="i_cuda"><option value="cu126">NVIDIA CUDA 12.6 (RTX 20xx+ recommended)</option><option value="cu124">NVIDIA CUDA 12.4</option><option value="cu121">NVIDIA CUDA 12.1</option><option value="cpu">CPU only (very slow)</option></select></div></div>
+  <p><button class="primary" id="i_go">Install AI backend</button> <span class="mut" id="i_st"></span></p>
+  <pre id="i_log" class="mut" style="max-height:200px;overflow:auto;white-space:pre-wrap"></pre>
+  <div class="mut">After it finishes, restart the app so the new libraries load.</div>
+</details>
+
 <div class="card"><b>History</b><div id="hist"></div></div>
 </main>
 <script>
@@ -121,5 +129,10 @@ $('hist').onclick=async e=>{const a=e.target.closest('a');if(!a)return;
   if(a.dataset.p){e.preventDefault();$('result').innerHTML=player(a.dataset.p);scrollTo(0,0)}
   if(a.dataset.r){e.preventDefault();$('prompt').value=a.dataset.pr;$('lyrics').value=a.dataset.ly;$('s_seed').value=a.dataset.s;scrollTo(0,0)}
   if(a.dataset.d){e.preventDefault();if(confirm('Delete this song and its files?')){await api('/api/history/'+a.dataset.d,{method:'DELETE'});loadHist()}}};
-loadSettings();loadHist();
+let it=null;
+async function ipoll(){const j=await api('/api/install-backend');$('i_log').textContent=j.log.join('\n');
+  $('i_st').textContent=j.running?'installing…':(j.ok===true?'done — restart the app':(j.ok===false?'failed':''));
+  $('i_go').disabled=j.running;if(!j.running&&it){clearInterval(it);it=null}}
+$('i_go').onclick=async()=>{try{await post('/api/install-backend',{cuda:$('i_cuda').value});it=setInterval(ipoll,1500);ipoll()}catch(e){$('i_st').textContent=e.message}};
+ipoll();loadSettings();loadHist();
 </script></body></html>

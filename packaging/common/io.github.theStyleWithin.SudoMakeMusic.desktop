@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=sudo make music
+GenericName=AI Music Generator
+Comment=Offline AI music generation for mid-range PCs
+Exec=sudo-make-music --open
+Icon=io.github.theStyleWithin.SudoMakeMusic
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=music;ai;generator;offline;

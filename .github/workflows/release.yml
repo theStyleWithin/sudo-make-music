@@ -1,0 +1,60 @@
+name: build
+on:
+  push: { branches: [main], tags: ['v*'] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -e '.[dev]'
+      - run: pytest -q
+
+  appimage:
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash packaging/appimage/build.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: appimage, path: dist/*.AppImage }
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: powershell -File packaging/windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with: { name: windows-portable, path: dist/sudo-make-music-portable.exe }
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.7' }
+      - run: gradle -p android assembleDebug --no-daemon
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk sudo-make-music-android.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: android-apk, path: sudo-make-music-android.apk }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [appimage, windows, android]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with: { files: out/*, generate_release_notes: true }

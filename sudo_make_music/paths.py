@@ -1,5 +1,6 @@
 """Where things live on disk. Override the root with SUDO_MAKE_MUSIC_HOME."""
 import os
+import sys
 from pathlib import Path
 
 
@@ -7,6 +8,8 @@ def home() -> Path:
     root = os.environ.get("SUDO_MAKE_MUSIC_HOME")
     if root:
         p = Path(root)
+    elif getattr(sys, "frozen", False):  # portable Windows exe: keep everything next to it
+        p = Path(sys.executable).parent / "sudo-make-music-data"
     else:
         base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
         p = Path(base) / "sudo-make-music"
