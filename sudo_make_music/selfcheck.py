@@ -59,7 +59,9 @@ def run() -> tuple[bool, list[str]]:
         enc.set_in_sample_rate(44100)
         enc.set_channels(1)
         enc.set_quality(2)
-        return f"lameenc encoded {len(enc.encode(b'\x00\x00' * 44100) + enc.flush())} bytes"
+        silence = b"\x00\x00" * 44100            # (no backslashes inside an f-string: that needs Python 3.12)
+        size = len(enc.encode(silence) + enc.flush())
+        return f"lameenc encoded {size} bytes"
 
     def kivy_ok():
         import kivy

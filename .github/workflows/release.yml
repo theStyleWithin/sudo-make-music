@@ -26,6 +26,15 @@ jobs:
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri xclip
           xvfb-run -a python tests/ui_smoke.py /tmp/shots
 
+  py-compat:
+    # The code claims Python >= 3.10 and the Android toolchain runs 3.11: catch newer-only syntax early.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - run: python -m compileall -q sudo_make_music main.py tools packaging
+
   appimage:
     needs: test
     runs-on: ubuntu-22.04
@@ -99,7 +108,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    needs: test
+    needs: [test, py-compat]
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
