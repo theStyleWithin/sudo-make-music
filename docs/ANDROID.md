@@ -4,6 +4,9 @@ The Android app is the **same app** as the desktop one: one Python codebase (Kiv
 memory modes, chunk/stitch pipeline, history), packaged with python-for-android via `buildozer.spec`.
 It runs fully on-device; there is no server.
 
+## Build
+The APK is a debug build made by CI with a pinned toolchain (`buildozer.spec`: python-for-android `v2024.01.21`, NDK 25b, API 33; CI pins buildozer 1.5.0 and Cython 0.29.37 and disables ccache, which broke numpy's link step). Newer python-for-android moved to Python 3.14 and its pip step then rejected the Android wheels of pure-Python dependencies.
+
 ## Status
 - Done: UI, engine, history, settings, WAV export, build config + CI job. Only the Mock synth backend exists on Android today.
 - **Not done: a phone-capable AI model backend.** ACE-Step (billions of parameters, needs CUDA/PyTorch) cannot run on a phone.

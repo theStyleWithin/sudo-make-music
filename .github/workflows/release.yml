@@ -111,20 +111,6 @@ jobs:
     needs: [test, py-compat]
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    name: android (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Two toolchains are tried side by side until one is proven; the APK name says which built it.
-          - name: legacy
-            p4a: v2024.01.21
-            buildozer: 'buildozer==1.5.0'
-            cython: 'cython==0.29.37'
-          - name: modern
-            p4a: v2026.05.09
-            buildozer: 'buildozer'
-            cython: 'cython<3.1'
     env:
       CCACHE_DISABLE: '1'   # the ccache wrapper broke numpy's link step
     steps:
@@ -138,12 +124,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential libltdl-dev
-      - run: pip install '${{ matrix.buildozer }}' '${{ matrix.cython }}' setuptools wheel
-      - name: Select the python-for-android release
-        run: |
-          sed -i "s/^p4a.branch = .*/p4a.branch = ${{ matrix.p4a }}/" buildozer.spec
-          if [ "${{ matrix.name }}" = "modern" ]; then sed -i '/^android.ndk = /d;/^android.api = /d' buildozer.spec; fi
-          grep -nE '^(p4a|android)\.' buildozer.spec
+      # Proven combination (python-for-android v2024.01.21 is pinned in buildozer.spec): newer ones moved to Python 3.14
+      # and broke the pip step; this set builds the APK.
+      - run: pip install 'buildozer==1.5.0' 'cython==0.29.37' setuptools wheel
       - name: Build debug APK
         timeout-minutes: 60
         run: buildozer -v android debug 2>&1 | tee build.log
@@ -170,11 +153,11 @@ jobs:
             echo "::error title=No APK produced::buildozer finished but no .apk file was found"
             exit 1
           fi
-          cp "$apk" "sudo-make-music-android-${{ matrix.name }}.apk"
+          cp "$apk" sudo-make-music-android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk-${{ matrix.name }}
-          path: sudo-make-music-android-${{ matrix.name }}.apk
+          name: android-apk
+          path: sudo-make-music-android.apk
           if-no-files-found: error
 
   release:
