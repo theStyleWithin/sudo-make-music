@@ -111,6 +111,22 @@ jobs:
     needs: [test, py-compat]
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    name: android (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Two toolchains are tried side by side until one is proven; the APK name says which built it.
+          - name: legacy
+            p4a: v2024.01.21
+            buildozer: 'buildozer==1.5.0'
+            cython: 'cython==0.29.37'
+          - name: modern
+            p4a: v2026.05.09
+            buildozer: 'buildozer'
+            cython: 'cython<3.1'
+    env:
+      CCACHE_DISABLE: '1'   # the ccache wrapper broke numpy's link step
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -121,8 +137,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential ccache libltdl-dev
-      - run: pip install 'buildozer==1.5.0' 'cython==0.29.37' setuptools wheel
+            libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev build-essential libltdl-dev
+      - run: pip install '${{ matrix.buildozer }}' '${{ matrix.cython }}' setuptools wheel
+      - name: Select the python-for-android release
+        run: |
+          sed -i "s/^p4a.branch = .*/p4a.branch = ${{ matrix.p4a }}/" buildozer.spec
+          if [ "${{ matrix.name }}" = "modern" ]; then sed -i '/^android.ndk = /d;/^android.api = /d' buildozer.spec; fi
+          grep -nE '^(p4a|android)\.' buildozer.spec
       - name: Build debug APK
         timeout-minutes: 60
         run: buildozer -v android debug 2>&1 | tee build.log
@@ -134,12 +155,11 @@ jobs:
           sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -vE '^# ' > clean.log || true
           e=$(grep -nE '\[ERROR\]|Traceback \(most recent|^[A-Za-z]+Error:|error: |CMake Error|make(\[[0-9]+\])?: \*\*\*|fatal error|FAILED:|Exception:|No matching distribution|Could not find|ERROR:' clean.log | tail -25 | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           t=$(tail -n 40 clean.log 2>/dev/null | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          # buildozer's own failure summary ("# Command failed: ...", "# Error code: ...") names the failing command
-          f=$(sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -E '^# (Run|Cwd|Command failed|Error code|Buildozer failed)' | tail -8 | cut -c1-700 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=android failure summary::$f"
+          f=$(sed -E 's/\x1b\[[0-9;]*m//g' build.log 2>/dev/null | grep -E '^# (Command failed|Error code|Buildozer failed)' | tail -4 | cut -c1-400 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           l=$(ls -la bin 2>&1 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::notice title=android LAST error lines::$e"
           echo "::notice title=android last 40 log lines::$t"
+          echo "::notice title=android failure summary::$f"
           echo "::notice title=android bin/::$l"
       - name: Collect the APK
         run: |
@@ -150,11 +170,11 @@ jobs:
             echo "::error title=No APK produced::buildozer finished but no .apk file was found"
             exit 1
           fi
-          cp "$apk" sudo-make-music-android.apk
+          cp "$apk" "sudo-make-music-android-${{ matrix.name }}.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: sudo-make-music-android.apk
+          name: android-apk-${{ matrix.name }}
+          path: sudo-make-music-android-${{ matrix.name }}.apk
           if-no-files-found: error
 
   release:
