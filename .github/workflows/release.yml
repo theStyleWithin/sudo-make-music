@@ -146,9 +146,17 @@ jobs:
       # Proven combination (python-for-android v2024.01.21 is pinned in buildozer.spec): newer ones moved to Python 3.14
       # and broke the pip step; this set builds the APK.
       - run: pip install 'buildozer==1.5.0' 'cython==0.29.37' setuptools wheel
-      - name: Build debug APK
+      - name: Build debug APK (retries: the SDK/NDK downloads sometimes fail with "Network is unreachable")
         timeout-minutes: 60
-        run: buildozer -v android debug 2>&1 | tee build.log
+        run: |
+          ok=0
+          for attempt in 1 2 3; do
+            echo "=== buildozer attempt $attempt ===" | tee -a build.log
+            if buildozer -v android debug 2>&1 | tee -a build.log; then ok=1; break; fi
+            echo "attempt $attempt failed" | tee -a build.log
+            sleep 30
+          done
+          [ "$ok" = 1 ]
       - name: Show build errors and bin/ (always)
         if: always()
         run: |
