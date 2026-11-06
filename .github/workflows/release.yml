@@ -9,24 +9,42 @@ on:
         required: false
         default: ''
 
+concurrency:
+  # a new push cancels the older push run (a stuck one included); manual/release runs are never cancelled by pushes
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: pip install -e '.[dev]'
-      - run: pytest -q
+      - name: Install ffmpeg
+        timeout-minutes: 5
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install the app
+        timeout-minutes: 8
+        run: pip install -e '.[dev]'
+      - name: Run the tests
+        timeout-minutes: 10
+        run: python -m pytest -q -x -o faulthandler_timeout=90 2>&1 | tee pytest.log
+      - name: Report where the tests stopped
+        if: failure() || cancelled()
+        run: |
+          t=$(tail -n 60 pytest.log 2>/dev/null | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=pytest tail::$t"
       - name: UI smoke test (headless; informational)
+        timeout-minutes: 6
         continue-on-error: true
         run: |
-          sudo apt-get update
           sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri xclip
-          xvfb-run -a python tests/ui_smoke.py /tmp/shots
+          xvfb-run -a python tests/ui_smoke.py /tmp/shots 2>&1 | tee smoke.log
 
   py-compat:
+    timeout-minutes: 5
     # The code claims Python >= 3.10 and the Android toolchain runs 3.11: catch newer-only syntax early.
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +55,7 @@ jobs:
 
   appimage:
     needs: test
+    timeout-minutes: 30
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
