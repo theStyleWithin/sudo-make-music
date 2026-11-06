@@ -213,7 +213,7 @@ jobs:
           tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: sudo make music ${{ github.event.inputs.release_tag || github.ref_name }}
-          body_path: docs/RELEASE_NOTES_1.0.md
+          body_path: docs/RELEASE_NOTES.md
           draft: false
           files: out/*
       - name: Publish release (retry once - uploads can fail transiently)
@@ -223,6 +223,6 @@ jobs:
           tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: sudo make music ${{ github.event.inputs.release_tag || github.ref_name }}
-          body_path: docs/RELEASE_NOTES_1.0.md
+          body_path: docs/RELEASE_NOTES.md
           draft: false
           files: out/*
