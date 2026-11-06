@@ -11,7 +11,7 @@ license = { text = "Unlicense" }
 dependencies = [
   "numpy>=1.24",
   "kivy>=2.3",
-  "lameenc>=1.7; sys_platform != 'android'",   # built-in MP3 encoder: no ffmpeg needed
+  "certifi",  "lameenc>=1.7; sys_platform != 'android'",   # built-in MP3 encoder: no ffmpeg needed
 ]
 
 [project.optional-dependencies]
@@ -30,6 +30,9 @@ sudo-make-music-gui = "sudo_make_music.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["sudo_make_music*"]
+
+[tool.setuptools.package-data]
+sudo_make_music = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

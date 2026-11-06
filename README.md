@@ -72,6 +72,17 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
 
+## Models tab: find, install and check models in one click
+
+Open **Models**: the app looks at your PC (GPU, memory, RAM) and lists models with a note for each one: *Runs well*, *Fits with limits (use Safe mode)*, *CPU only (slow)* or *Too big*, plus **Best for your PC** and **Lightweight** tags. A GTX/RTX 2060 is pointed at models that fit 6 GB; a 5090 gets the biggest. Press **Download**: the app lists and fetches the files itself (no browsing Hugging Face), resumes interrupted downloads, verifies every file against the checksum the host publishes, then runs the safety checks below and registers the model.
+- **Refresh list (online)** fetches the newest list (`sudo_make_music/data/catalog.json` in the GitHub repo), so new models appear without a new app release. The list only accepts downloads from a short allowlist of hosts (huggingface.co, hf.co, github.com) over HTTPS.
+- **Safety scan** (every download, every imported folder, and on demand): reads pickle-style weights (`.pt .pth .ckpt .bin .th`) **without running them** and blocks ones that import code like `os`/`subprocess`; checks safetensors/GGUF structure; blocks executables, scripts, symlinks and archives that escape their folder; then runs **your computer's antivirus** if there is one (Windows Defender, or ClamAV on Linux: `sudo pacman -S clamav`). A threat quarantines the download.
+- **VirusTotal**: every model has a button that opens its file's VirusTotal page by SHA-256. Files are **never uploaded**. With an optional free API key (Settings) the app can also read the result itself, sending only the fingerprint. "Not found" just means nobody uploaded that exact file.
+- **Offline mode** disables the list refresh, downloads and VirusTotal lookups; local scanning still works.
+- Not every model is GGUF and none has to be: each entry says which engine (backend) runs it. GGUF entries can be added to the list once a GGUF engine exists.
+- Gated models (e.g. Stable Audio Open Small) need you to accept the licence on the model page and set the `HF_TOKEN` environment variable.
+- The catalog entries were written without being able to download them: sizes are approximate and the file layouts match what each engine expects but are unverified. Tell me which entry fails and I will fix it.
+
 ## Voices: voice library, talk mode, cloning
 
 - **Create > Talk:** type text and have a voice speak it (not sing). Long text is split into sentences, synthesized one at a time and streamed to disk.

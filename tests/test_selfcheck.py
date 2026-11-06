@@ -8,6 +8,7 @@ def test_selfcheck_passes_with_mock_engines(tmp_path, monkeypatch):
     assert ok, text
     assert "SELFCHECK PASSED" in text and "[ok]   mock song + mp3 export" in text
     assert "[ok]   voice library + talk mode" in text
+    assert "[ok]   model list (Models tab)" in text and "[ok]   safety scanner" in text
 
 
 def test_selfcheck_cli_writes_report_and_exit_code(tmp_path, monkeypatch):

@@ -6,7 +6,8 @@ from kivy.tools.packaging.pyinstaller_hooks import get_deps_minimal, hookspath, 
 
 kv = get_deps_minimal(video=None, camera=None, spelling=None)
 ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))      # SPECPATH = this file's folder
-a = Analysis([os.path.join(SPECPATH, "launcher.py")], pathex=[ROOT], datas=[],
+a = Analysis([os.path.join(SPECPATH, "launcher.py")], pathex=[ROOT],
+             datas=[(os.path.join(ROOT, "sudo_make_music", "data", "catalog.json"), "sudo_make_music/data")],
              hiddenimports=kv["hiddenimports"] + ["sudo_make_music.ui.app", "pip", "lameenc"],
              excludes=kv["excludes"] + ["tkinter", "unittest", "test"],   # unused: fewer modules for scanners to look at
               hookspath=hookspath(), runtime_hooks=runtime_hooks())

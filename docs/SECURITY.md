@@ -3,7 +3,8 @@
 **No accounts, no API keys, no tokens, no telemetry, no cloud services.** The installers contain no secrets.
 
 ## Network
-The app itself contains no network code. Network is used only when *you* trigger it:
+Network is used only when *you* trigger it (nothing runs in the background, there is no telemetry):
+- **Models tab:** *Refresh list* fetches one JSON file from raw.githubusercontent.com; *Download* fetches model files from huggingface.co / hf.co / github.com only, over HTTPS (redirects to other hosts are refused, credentials are never forwarded across a redirect); *VirusTotal lookup* (only if you add your own API key) sends a SHA-256 fingerprint, never a file. Offline mode disables all of these.
 - **Settings > Install ... buttons** (or `--install-backend`): runs `pip` to download PyTorch, ACE-Step, etc. from
   pypi.org, download.pytorch.org and github.com (ACE-Step / OpenVoice source zips). Needs internet once.
 - **Model libraries** (Hugging Face-based ones) may download weights on first use **unless Offline mode is on**, which sets

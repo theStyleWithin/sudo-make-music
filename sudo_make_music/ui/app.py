@@ -289,6 +289,68 @@ KV = r"""
                         height: self.minimum_height
                         spacing: dp(8)
         Screen:
+            name: 'store'
+            ScrollView:
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(12)
+                    spacing: dp(8)
+                    Label:
+                        text: root.store_header
+                        markup: True
+                        size_hint_y: None
+                        height: self.texture_size[1] + dp(6)
+                        text_size: self.width, None
+                        halign: 'left'
+                        font_size: '12sp'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(44)
+                        spacing: dp(8)
+                        Primary:
+                            text: 'Refresh list (online)'
+                            on_release: root.refresh_store_list()
+                        Pick:
+                            id: store_filter
+                            values: ['All', 'Music', 'Talk voice', 'Singing voice cloning', 'Vocal separation']
+                            text: 'All'
+                            size_hint_y: None
+                            height: dp(44)
+                            on_text: root.refresh_store()
+                    Label:
+                        text: root.install_status
+                        size_hint_y: None
+                        height: dp(22) if root.install_status else 0
+                        opacity: 1 if root.install_status else 0
+                        text_size: self.width, None
+                        halign: 'left'
+                        font_size: '12sp'
+                    ProgressBar:
+                        max: 1
+                        value: root.install_progress
+                        size_hint_y: None
+                        height: dp(10) if root.install_status else 0
+                        opacity: 1 if root.install_status else 0
+                    BoxLayout:
+                        id: store_list
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(10)
+                    Cap:
+                        text: 'Models installed on this computer'
+                    BoxLayout:
+                        id: installed_list
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(8)
+                    Btn:
+                        text: 'Scan any folder for problems...'
+                        on_release: root.pick_scan_folder()
+        Screen:
             name: 'library'
             ScrollView:
                 BoxLayout:
@@ -413,6 +475,26 @@ KV = r"""
                             width: dp(90)
                     BoxLayout:
                         size_hint_y: None
+                        height: dp(40)
+                        Cap:
+                            text: 'Run my antivirus on new model downloads'
+                            height: dp(40)
+                        Switch:
+                            id: s_avscan
+                            size_hint_x: None
+                            width: dp(90)
+                    Cap:
+                        text: 'VirusTotal API key (optional, only used to look up file fingerprints; stored unencrypted on this computer)'
+                        height: dp(36)
+                    Field:
+                        id: s_vt
+                        password: True
+                    Cap:
+                        text: 'Model list address (blank = project default)'
+                    Field:
+                        id: s_cat
+                    BoxLayout:
+                        size_hint_y: None
                         height: dp(56)
                         Cap:
                             text: 'Continue each chunk from the previous one (experimental; helps long songs hang together)'
@@ -478,6 +560,9 @@ KV = r"""
             text: 'Library'
             on_release: root.show('library')
         Btn:
+            text: 'Models'
+            on_release: root.show('store')
+        Btn:
             text: 'Settings'
             on_release: root.show('settings')
 """
@@ -498,6 +583,9 @@ class Root(BoxLayout):
     mode = StringProperty("song")          # song | talk
     result_kind = StringProperty("")
     model_report = StringProperty("")
+    store_header = StringProperty("")
+    install_status = StringProperty("")
+    install_progress = NumericProperty(0)
 
     def __init__(self, engine: Engine, **kw):
         super().__init__(**kw)
@@ -581,6 +669,7 @@ class Root(BoxLayout):
         i.s_idle.text = str(s.idle_unload_seconds)
         i.s_offline.active, i.s_cont.active = s.offline_mode, s.continuity
         i.s_warn.active = s.ask_on_fallback
+        i.s_avscan.active, i.s_vt.text, i.s_cat.text = s.scan_after_download, s.vt_api_key, s.catalog_url
         i.resource.text = {None: "Auto", "cuda": "GPU", "cpu": "CPU + system RAM"}[o.get("device")]
         self.refresh_models()
         self.refresh_voices()
@@ -593,7 +682,8 @@ class Root(BoxLayout):
             self.engine.store.value.update(dict(
                 memory_mode=i.s_mode.text, seed=i.s_seed.text, steps=num(i.s_steps) or 60,
                 idle_unload_seconds=num(i.s_idle) if i.s_idle.text.strip() else 120,
-                offline_mode=i.s_offline.active, continuity=i.s_cont.active, ask_on_fallback=i.s_warn.active,
+                offline_mode=i.s_offline.active, continuity=i.s_cont.active, ask_on_fallback=i.s_warn.active, scan_after_download=i.s_avscan.active,
+                vt_api_key=i.s_vt.text, catalog_url=i.s_cat.text,
                 speech_backend=getattr(self, "_sbackend_by_name", {}).get(i.s_speech.text, self.engine.store.value.speech_backend),
                 converter_backend=getattr(self, "_conv_by_name", {}).get(i.s_conv.text, self.engine.store.value.converter_backend),
                 separator_backend=getattr(self, "_sep_by_name", {}).get(i.s_sep.text, self.engine.store.value.separator_backend),
@@ -808,6 +898,215 @@ class Root(BoxLayout):
         self.form_popup("Add preset voice", [("name", "Voice name", preset)],
                         lambda v: (self.engine.voices.create_preset(v["name"], preset), self.refresh_voices()))
 
+    # ---- model store -----------------------------------------------------
+    ROLE_FILTER = {"Music": "music", "Talk voice": "speech", "Singing voice cloning": "converter", "Vocal separation": "separator"}
+    FIT_COLOR = {"great": "5fd38d", "tight": "e8c04a", "cpu": "ff9966", "no": "ff6b6b"}
+    _last_install_id = None
+
+    def popup_text(self, title, text, buttons=()):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        from kivy.uix.popup import Popup
+        from kivy.uix.scrollview import ScrollView
+        box = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(10))
+        sv = ScrollView()
+        lab = Label(text=text, size_hint_y=None, halign="left", valign="top")
+        lab.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
+        lab.bind(texture_size=lambda w, sz: setattr(w, "height", sz[1]))
+        sv.add_widget(lab)
+        box.add_widget(sv)
+        pop = Popup(title=title, content=box, size_hint=(0.94, 0.8))
+        for label, cb in buttons:
+            b = Factory.Primary(text=label)
+            b.bind(on_release=lambda *_a, cb=cb: cb())
+            box.add_widget(b)
+        close = Factory.Btn(text="Close")
+        close.bind(on_release=pop.dismiss)
+        box.add_widget(close)
+        pop.open()
+        return pop
+
+    def refresh_store(self):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        e = self.engine
+        h = e.hw
+        pc = (f"{h.gpu_name} ({h.vram_mb // 1024} GB VRAM)" if h.gpu_name and h.vram_mb else "no GPU found") + \
+             (f", {h.ram_mb // 1024} GB RAM" if h.ram_mb else "")
+        off = "  [color=ff9966]Offline mode is ON: downloading and list refresh are disabled.[/color]" if e.store.value.offline_mode else ""
+        self.store_header = (f"[b]Your PC:[/b] {pc}.  List: {e.catalog.source}"
+                             + (f" ({e.catalog.updated})" if e.catalog.updated else "") + "." + off)
+        role = self.ROLE_FILTER.get(self.ids.store_filter.text)
+        box = self.ids.store_list
+        box.clear_widgets()
+        busy = bool(e.install_task and e.install_task.status == "running")
+        for r in e.catalog_rows():
+            if role and r["role"] != role:
+                continue
+            card = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(3))
+            tags = ("  [color=e8c04a]* Best for your PC[/color]" if r["best"] else "") + \
+                   ("  [color=7c9cff]Lightweight[/color]" if r["lightest"] else "")
+            lines = [f"[b]{r['name']}[/b]{tags}",
+                     f"{r['description']}",
+                     f"[color=8b8fa3]{r['role']} - ~{r['size_mb'] / 1000:.1f} GB - {r['license']} - {r['format']}"
+                     + (" - voice cloning" if r["clone"] else "") + "[/color]",
+                     f"[color={self.FIT_COLOR[r['fit']]}]{r['fit_label']}[/color]"]
+            if r["gated"] and "gated" not in r["notes"].lower():
+                lines.append("[color=ff9966]Gated: accept the licence on the model page and set HF_TOKEN first.[/color]")
+            if not r["engine_ok"]:
+                lines.append("[color=ff9966]Its engine is not installed yet: see the Install buttons in Settings.[/color]")
+            if r["notes"]:
+                lines.append(f"[color=8b8fa3]{r['notes']}[/color]")
+            lab = Label(text="\n".join(lines), markup=True, size_hint_y=None, halign="left", valign="top")
+            lab.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
+            lab.bind(texture_size=lambda w, sz, card=card: (setattr(w, "height", sz[1] + dp(4)),
+                                                           setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(6))))
+            card.add_widget(lab)
+            btns = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
+
+            def add(text, cb, enabled=True, primary=False):
+                b = (Factory.Primary if primary else Factory.Btn)(text=text, disabled=not enabled)
+                b.bind(on_release=lambda *_: cb())
+                btns.add_widget(b)
+            if r["installed"]:
+                add("Installed", lambda: None, False)
+                add("Safety scan", lambda i=r["id"]: self.scan_installed(i))
+                add("VirusTotal", lambda i=r["id"]: self.vt_installed(i))
+            else:
+                add("Download", lambda i=r["id"]: self.download(i), not busy and r["fit"] != "no", True)
+                add("Model page", lambda u=r["homepage"]: self.open_link(u), bool(r["homepage"]))
+            card.add_widget(btns)
+            card.height = dp(180)
+            box.add_widget(card)
+        inst = self.ids.installed_list
+        inst.clear_widgets()
+        models = e.models.list()
+        if not models:
+            inst.add_widget(Label(text="None yet.", size_hint_y=None, height=dp(30)))
+        for m in models:
+            row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(6))
+            t = Label(text=f"{m.name} ({m.size_mb} MB)", halign="left", shorten=True, text_size=(dp(150), None))
+            row.add_widget(t)
+            for text, cb in (("Safety scan", lambda i=m.id: self.scan_installed(i)), ("VirusTotal", lambda i=m.id: self.vt_installed(i))):
+                b = Factory.Btn(text=text)
+                b.bind(on_release=lambda *_a, cb=cb: cb())
+                row.add_widget(b)
+            inst.add_widget(row)
+
+    def open_link(self, url):
+        import webbrowser
+        webbrowser.open(url)
+
+    def _bg(self, work, done):
+        """Run work() in a thread; call done(result_or_exception) on the UI thread."""
+        import threading
+
+        def run():
+            try:
+                res = work()
+            except Exception as ex:
+                res = ex
+            Clock.schedule_once(lambda dt: done(res))
+        threading.Thread(target=run, daemon=True).start()
+
+    def refresh_store_list(self):
+        self._say("Fetching the model list...")
+
+        def done(res):
+            if isinstance(res, Exception):
+                return self._say(str(res), True)
+            self._say(f"Model list updated: {res} models.")
+            self.refresh_store()
+        self._bg(self.engine.refresh_catalog, done)
+
+    def download(self, entry_id):
+        try:
+            self.engine.start_install(entry_id)
+        except Exception as ex:
+            return self._say(str(ex), True)
+        self._say("Download started. You can keep using the app.")
+        self.refresh_store()
+
+    def cancel_install(self):
+        self.engine.cancel_install()
+
+    def _poll_install(self):
+        t = self.engine.install_task
+        if not t:
+            return
+        if t.status == "running":
+            self.install_progress, self.install_status = t.progress, f"{t.name}: {t.message}"
+            return
+        if self._last_install_id == t.id:
+            return
+        self._last_install_id = t.id
+        self.install_progress, self.install_status = 0, ""
+        if t.status == "done":
+            self._say(f"{t.name}: {t.message}")
+            self.refresh_models()
+            self.refresh_status()
+            self.refresh_voices()
+            if t.report and "BLOCK" not in t.report and ("WARN" in t.report or "INFO" in t.report):
+                self.popup_text("Safety check", t.report)
+        else:
+            self._say(t.message, t.status == "error")
+        self.refresh_store()
+
+    def _show_scan(self, title, res):
+        if isinstance(res, Exception):
+            return self._say(str(res), True)
+        btns = []
+        if res.get("sha256"):
+            sha = res["sha256"]
+            btns.append(("Open on VirusTotal", lambda: self.open_link(__import__("sudo_make_music.virustotal", fromlist=["x"]).gui_url(sha))))
+            if self.engine.store.value.vt_api_key:
+                btns.append(("Ask VirusTotal (sends only the fingerprint)", lambda: self._vt_api(sha)))
+        extra = f"\n\nFile: {res['file']}\nSHA-256: {res['sha256']}" if res.get("sha256") else ""
+        self.popup_text(title, res["text"] + extra, btns)
+
+    def scan_installed(self, model_id):
+        self._say("Scanning... (large models take a minute)")
+        self._bg(lambda: self.engine.scan_model(model_id), lambda res: self._show_scan("Safety scan", res))
+
+    def vt_installed(self, model_id):
+        self._say("Fingerprinting the model...")
+
+        def done(res):
+            if isinstance(res, Exception):
+                return self._say(str(res), True)
+            if not res.get("sha256"):
+                return self._say("No file to look up.", True)
+            self._show_scan("VirusTotal", res)
+        self._bg(lambda: self.engine.scan_model(model_id, use_os=False), done)
+
+    def _vt_api(self, sha):
+        self._bg(lambda: self.engine.vt_lookup(sha),
+                 lambda r: self.popup_text("VirusTotal", r.summary() if not isinstance(r, Exception) else str(r),
+                                           [("Open page", lambda: self.open_link(r.url))] if not isinstance(r, Exception) and r.url else []))
+
+    def pick_scan_folder(self):
+        from kivy.factory import Factory
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+        box = BoxLayout(orientation="vertical", spacing=dp(6))
+        chooser = FileChooserListView(dirselect=True, path=str(Path.home()))
+        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        ok, no = Factory.Primary(text="Scan this folder"), Factory.Btn(text="Cancel")
+        row.add_widget(ok)
+        row.add_widget(no)
+        box.add_widget(chooser)
+        box.add_widget(row)
+        pop = Popup(title="Choose a folder to scan", content=box, size_hint=(0.95, 0.9))
+        no.bind(on_release=pop.dismiss)
+
+        def go(*_):
+            sel = chooser.selection[0] if chooser.selection else chooser.path
+            pop.dismiss()
+            self._say("Scanning...")
+            self._bg(lambda: self.engine.scan_folder_path(sel), lambda res: self._show_scan("Safety scan", res))
+        ok.bind(on_release=go)
+        pop.open()
+
     # ---- local models ----------------------------------------------------
     def refresh_models(self):
         self._model_by_label = {f"[{m.backend}] {m.name} ({m.size_mb} MB)": m for m in self.engine.models.list()}
@@ -877,6 +1176,8 @@ class Root(BoxLayout):
             self.refresh_library()
         if name == "voices":
             self.refresh_voices()
+        if name == "store":
+            self.refresh_store()
 
     def _say(self, msg, err=False):
         self.message, self.is_error = msg, err
@@ -933,6 +1234,7 @@ class Root(BoxLayout):
             self.engine.cancel(self.job.id)
 
     def _tick(self, dt):
+        self._poll_install()
         if self.install_log or self.installer.running:
             snap = self.installer.snapshot()
             self.install_log = "\n".join(snap["log"][-8:]) + ("\nDONE - restart the app." if snap["ok"] else "")

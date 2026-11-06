@@ -57,10 +57,17 @@ class ModelStore:
     def get(self, model_id: str) -> ModelInfo | None:
         return next((m for m in self.list() if m.id == model_id), None)
 
-    def register(self, folder: Path, backend: str, name: str) -> ModelInfo:
-        """Mark an existing folder under the store as a model (used for auto-created default dirs)."""
+    def meta(self, model_id: str) -> dict:
+        m = self.get(model_id)
+        try:
+            return json.loads((Path(m.path) / MANIFEST).read_text()) if m else {}
+        except (OSError, ValueError):
+            return {}
+
+    def register(self, folder: Path, backend: str, name: str, extra: dict | None = None) -> ModelInfo:
+        """Mark an existing folder under the store as a model (used for auto-created default dirs and catalog installs)."""
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / MANIFEST).write_text(json.dumps({"backend": backend, "name": name}))
+        (folder / MANIFEST).write_text(json.dumps({"backend": backend, "name": name, **(extra or {})}))
         return self.get(folder.name)  # type: ignore[return-value]
 
     def import_folder(self, src: Path, backend: str, name: str | None = None, link: bool = False) -> ModelInfo:

@@ -25,6 +25,9 @@ class Settings:
     models: dict = field(default_factory=dict)   # backend id -> selected model id
     offline_mode: bool = False          # block all network access from model libraries
     ask_on_fallback: bool = True        # hardware warning popup before switching resource
+    catalog_url: str = ""               # empty = the project default list
+    vt_api_key: str = ""                # optional, user-provided; only used to look up file hashes (never uploads)
+    scan_after_download: bool = True    # also run the computer's antivirus on new downloads when one is available
     continuity: bool = False            # condition each chunk on the previous one (experimental)
 
     def update(self, data: dict) -> None:
@@ -55,6 +58,12 @@ class Settings:
             self.offline_mode = bool(data["offline_mode"])
         if "ask_on_fallback" in data:
             self.ask_on_fallback = bool(data["ask_on_fallback"])
+        if "catalog_url" in data:
+            self.catalog_url = str(data["catalog_url"]).strip()
+        if "vt_api_key" in data:
+            self.vt_api_key = str(data["vt_api_key"]).strip()
+        if "scan_after_download" in data:
+            self.scan_after_download = bool(data["scan_after_download"])
         if "continuity" in data:
             self.continuity = bool(data["continuity"])
         if "output_format" in data:

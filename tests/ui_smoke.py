@@ -92,6 +92,10 @@ def step(dt):
         state["n"] = 0
     elif ph == "end" and state["n"] == 2:
         shot("library")
+        r.show("store")
+    elif ph == "end" and state["n"] == 3:
+        shot("store")
+        expect(len(r.ids.store_list.children) >= 5, "model store lists the catalog")
         r.show("settings")
     elif ph == "end" and state["n"] == 4:
         shot("settings")

@@ -15,7 +15,7 @@ import numpy as np
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from . import hardware, memory, paths
+from . import catalog as catalog_mod, downloader, hardware, installer, memory, paths, safety, virustotal
 from .audio import (WavWriter, Stitcher, plan_segments, export_mp3, read_wav, read_wav_range, wav_info,
                     resample_linear)
 from .backends import registry, SegmentRequest, SpeechRequest, Cancelled
@@ -73,6 +73,10 @@ class Engine:
         self.hw = hardware.detect()
         self.models = ModelStore()
         self.voices = VoiceStore()
+        self.catalog = catalog_mod.CatalogStore()
+        self.install_task = None
+        self.hf_base = downloader.HF_BASE            # overridable (tests use a local server)
+        self.allow_local_http = False
         self._hid_cuda = False
         self._set_device_env(self.active_params().device)
         self.jobs: dict[str, Job] = {}
@@ -153,8 +157,12 @@ class Engine:
                             needs_model=b.needs_model, path=str(path) if path else None))
         return out
 
-    def import_model(self, path: str, backend: str | None = None, name: str | None = None, link: bool = False):
+    def import_model(self, path: str, backend: str | None = None, name: str | None = None, link: bool = False,
+                     force: bool = False):
         b = self._backend(backend or self.store.value.backend)
+        rep = safety.scan_folder(Path(path))       # never bring a booby-trapped folder into the model store
+        if rep.verdict == "blocked" and not force:
+            raise ValueError("the safety check blocked this folder:\n" + rep.to_text(8))
         info = self.models.import_folder(Path(path), b.id, name, link)
         self.store.value.models[info.backend] = info.id
         self.store.save()
@@ -180,6 +188,64 @@ class Engine:
                 os.environ[k] = "1"
             else:
                 os.environ.pop(k, None)
+
+    # ---- model store (catalog, install, safety) -------------------------
+    def _need_online(self, what: str) -> None:
+        if self.store.value.offline_mode:
+            raise RuntimeError(f"Offline mode is on, so {what} is disabled. Turn offline mode off in Settings to use it.")
+
+    def catalog_rows(self) -> list[dict]:
+        from .backends import registry
+        rows = catalog_mod.rank(self.catalog.entries(), self.hw)
+        for r in rows:
+            r["installed"] = self.models.get(r["id"]) is not None
+            cls = registry().get(r["backend"])
+            ok, why = cls.available() if cls else (False, "this app version has no engine for it")
+            r["engine_ok"], r["engine_hint"] = ok, ("" if ok else why)
+        return rows
+
+    def refresh_catalog(self) -> int:
+        self._need_online("refreshing the model list")
+        return self.catalog.refresh(self.store.value.catalog_url or catalog_mod.DEFAULT_CATALOG_URL, self.allow_local_http)
+
+    def start_install(self, entry_id: str):
+        self._need_online("downloading models")
+        entry = self.catalog.get(entry_id)
+        if not entry:
+            raise ValueError("unknown model")
+        if self.models.get(entry_id):
+            raise ValueError(f"{entry.name} is already installed")
+        if self.install_task and self.install_task.status == "running":
+            raise RuntimeError("another download is still running")
+        self.install_task = installer.start(self, entry)
+        return self.install_task
+
+    def cancel_install(self) -> None:
+        if self.install_task and self.install_task.status == "running":
+            self.install_task.cancel.set()
+
+    def scan_model(self, model_id: str, use_os: bool = True) -> dict:
+        """Safety scan (+ the computer's antivirus) of an installed model; returns text, hashes and the VirusTotal target."""
+        m = self.models.get(model_id)
+        if not m:
+            raise ValueError("no such model")
+        rep = safety.scan_folder(Path(m.path), hash_files=True)
+        osr = safety.os_scan(Path(m.path)) if use_os else None
+        main = rep.main_file()
+        text = rep.to_text() + (f"\n{osr.engine}: {osr.status} - {osr.detail}" if osr else "")
+        return dict(text=text, verdict=rep.verdict, os_status=osr.status if osr else "skipped",
+                    sha256=main[1] if main else None, file=main[0] if main else None, hashes=rep.hashes)
+
+    def scan_folder_path(self, path: str, use_os: bool = True) -> dict:
+        rep = safety.scan_folder(Path(path), hash_files=True)
+        osr = safety.os_scan(Path(path)) if use_os else None
+        main = rep.main_file()
+        return dict(text=rep.to_text() + (f"\n{osr.engine}: {osr.status} - {osr.detail}" if osr else ""), verdict=rep.verdict,
+                    sha256=main[1] if main else None, file=main[0] if main else None)
+
+    def vt_lookup(self, sha256: str):
+        self._need_online("the VirusTotal lookup")
+        return virustotal.lookup(sha256, self.store.value.vt_api_key or None)
 
     # ---- submit / cancel -----------------------------------------------
     def submit(self, prompt: str, lyrics: str, duration: int, voice_id: str | None = None) -> Job:

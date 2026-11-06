@@ -102,6 +102,31 @@ def run() -> tuple[bool, list[str]]:
         def models():
             return ", ".join(f"{r['role']}: {'ready' if r['installed'] else 'no model yet'}" for r in engine.model_status())
 
+        def model_list():
+            from .catalog import CatalogStore
+            n = len(CatalogStore(cache=Path(home) / "nocache.json").entries())
+            if n < 3:
+                raise RuntimeError("the bundled model list is missing or empty")
+            return f"{n} models in the built-in list"
+
+        def scanner():
+            import os as _os
+            import pickle
+            from . import safety
+
+            class _Evil:
+                def __reduce__(self):
+                    return (_os.system, ("echo never-runs",))
+            d = Path(home) / "scan-test"
+            d.mkdir()
+            (d / "evil.pt").write_bytes(pickle.dumps(_Evil(), protocol=2))
+            rep = safety.scan_folder(d)
+            if rep.verdict != "blocked":
+                raise RuntimeError("the safety scanner did not flag a booby-trapped pickle")
+            return "flags a booby-trapped pickle without running it"
+
+        check("model list (Models tab)", model_list)
+        check("safety scanner", scanner)
         check("mock song + mp3 export", song)
         check("voice library + talk mode", voice_and_talk)
         check("model status", models)
