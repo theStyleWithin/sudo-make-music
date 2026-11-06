@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "updated": "2026-11-06",
+  "note": "Model list for the in-app Models tab. Sizes are approximate. Hashes come from the hosting service at download time and are shown to you; nothing here is pinned yet.",
+  "entries": [
+    {
+      "id": "acestep-v1-3.5b", "name": "ACE-Step v1 (3.5B) - songs with lyrics", "role": "music", "backend": "acestep",
+      "description": "Full songs with vocals and lyrics, up to 4 minutes per clip. The default music model.",
+      "license": "Apache-2.0", "size_mb": 7500, "quality": 5, "light": false, "clone": false,
+      "vram_min_mb": 6000, "vram_good_mb": 12000, "ram_min_mb": 16000, "cpu_ok": true, "gated": false,
+      "format": "safetensors", "homepage": "https://huggingface.co/ACE-Step/ACE-Step-v1-3.5B",
+      "notes": "On 6GB cards use Safe memory mode (offload + int8).",
+      "sources": [ { "type": "hf_repo", "repo": "ACE-Step/ACE-Step-v1-3.5B" } ]
+    },
+    {
+      "id": "stable-audio-open-small", "name": "Stable Audio Open Small - fast instrumental clips", "role": "music", "backend": "stableaudio",
+      "description": "Tiny and fast: up to 11 second instrumental clips and sound effects. No lyrics or vocals.",
+      "license": "Stability AI Community License", "size_mb": 2500, "quality": 3, "light": true, "clone": false,
+      "vram_min_mb": 1500, "vram_good_mb": 3000, "ram_min_mb": 8000, "cpu_ok": true, "gated": true,
+      "format": "safetensors", "homepage": "https://huggingface.co/stabilityai/stable-audio-open-small",
+      "notes": "Gated: accept the licence on the model page, then set the HF_TOKEN environment variable before downloading.",
+      "sources": [
+        { "type": "hf_repo", "repo": "stabilityai/stable-audio-open-small", "allow": ["model_config.json", "model.safetensors", "LICENSE*", "README.md"] },
+        { "type": "hf_repo", "repo": "google-t5/t5-base", "dest": "t5-base", "allow": ["*.json", "*.model", "model.safetensors"] }
+      ]
+    },
+    {
+      "id": "kokoro-82m", "name": "Kokoro 82M - fast talk voices (presets)", "role": "speech", "backend": "kokoro",
+      "description": "Very light text-to-speech with ready-made voices. Runs on any GPU or on CPU. No voice cloning.",
+      "license": "Apache-2.0", "size_mb": 350, "quality": 3, "light": true, "clone": false,
+      "vram_min_mb": 0, "vram_good_mb": 1000, "ram_min_mb": 4000, "cpu_ok": true, "gated": false,
+      "format": "pth (pickle)", "homepage": "https://huggingface.co/hexgrad/Kokoro-82M",
+      "notes": "Weights are in a pickle-based format: only download from the publisher.",
+      "sources": [ { "type": "hf_repo", "repo": "hexgrad/Kokoro-82M", "allow": ["config.json", "kokoro-v1_0.pth", "voices/*.pt", "README.md"] } ]
+    },
+    {
+      "id": "chatterbox", "name": "Chatterbox - talk with voice cloning", "role": "speech", "backend": "chatterbox",
+      "description": "Speaks in the voice of a 5-15 second reference clip. The best quality for cloning a voice.",
+      "license": "MIT", "size_mb": 3200, "quality": 5, "light": false, "clone": true,
+      "vram_min_mb": 4000, "vram_good_mb": 8000, "ram_min_mb": 12000, "cpu_ok": true, "gated": false,
+      "format": "safetensors + pt", "homepage": "https://huggingface.co/ResembleAI/chatterbox",
+      "notes": "Falls back to CPU (slow) on small GPUs.",
+      "sources": [ { "type": "hf_repo", "repo": "ResembleAI/chatterbox", "allow": ["*.safetensors", "*.json", "conds.pt", "*.txt", "README.md"] } ]
+    },
+    {
+      "id": "openvoice-v2", "name": "OpenVoice v2 - change a singer's voice (converter)", "role": "converter", "backend": "openvoice",
+      "description": "Small voice converter used by Re-voice. Needs a vocal-separation model as well.",
+      "license": "MIT", "size_mb": 150, "quality": 3, "light": true, "clone": true,
+      "vram_min_mb": 1000, "vram_good_mb": 2000, "ram_min_mb": 6000, "cpu_ok": true, "gated": false,
+      "format": "pth (pickle)", "homepage": "https://huggingface.co/myshell-ai/OpenVoiceV2",
+      "notes": "Weights are in a pickle-based format: only download from the publisher.",
+      "sources": [ { "type": "hf_repo", "repo": "myshell-ai/OpenVoiceV2", "allow": ["converter/*", "README.md"] } ]
+    }
+  ]
+}
