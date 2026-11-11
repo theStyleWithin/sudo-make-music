@@ -1,7 +1,10 @@
-# sudo make music 1.0.2
+# sudo make music 1.0.3
 
 Offline AI music generation for mid-range PCs (built for ~6GB VRAM / 16GB RAM). No cloud, no content filter,
 every model is a local, swappable folder.
+
+## What is new in 1.0.3
+- **Sample cards:** the app now starts with eight ready-made song cards (lo-fi, house, synthwave, ambient, rock, jazz, trance, chiptune) in Library > Cards. Play, remix or extend them as a reference for your own songs. They are added once and you can delete them.
 
 ## What is new in 1.0.2
 - **Procedural music (BETA):** a no-AI, no-download engine that builds songs from rules and sings your lyrics. Instant, tiny, and the default on Android.

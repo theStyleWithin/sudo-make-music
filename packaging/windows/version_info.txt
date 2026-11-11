@@ -17,12 +17,12 @@ VSVersionInfo(
       StringTable('040904B0', [
         StringStruct('CompanyName', 'theStyleWithin'),
         StringStruct('FileDescription', 'sudo make music - offline AI music generator'),
-        StringStruct('FileVersion', '1.0.2.0'),
+        StringStruct('FileVersion', '1.0.3.0'),
         StringStruct('InternalName', 'sudo-make-music'),
         StringStruct('LegalCopyright', 'Public domain (Unlicense)'),
         StringStruct('OriginalFilename', 'sudo-make-music.exe'),
         StringStruct('ProductName', 'sudo make music'),
-        StringStruct('ProductVersion', '1.0.2.0'),
+        StringStruct('ProductVersion', '1.0.3.0'),
         StringStruct('Comments', 'https://github.com/theStyleWithin/sudo-make-music')
       ])
     ]),

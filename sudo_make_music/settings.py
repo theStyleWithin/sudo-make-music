@@ -23,6 +23,7 @@ class Settings:
     idle_unload_seconds: int = 120
     output_format: str = "wav"          # wav | mp3
     models: dict = field(default_factory=dict)   # backend id -> selected model id
+    samples_seeded: bool = False         # the built-in sample cards were added once
     offline_mode: bool = False          # block all network access from model libraries
     ask_on_fallback: bool = True        # hardware warning popup before switching resource
     catalog_url: str = ""               # empty = the project default list

@@ -23,6 +23,7 @@ from .backends import registry, SegmentRequest, SpeechRequest, Cancelled
 from .history import History
 from .backends import procedural as proc
 from .cards import CardStore
+from .samples import install_samples
 from .models import ModelStore
 from .textsplit import split_text
 from .voices import VoiceStore
@@ -80,6 +81,7 @@ class Engine:
         self.voices = VoiceStore()
         self.catalog = catalog_mod.CatalogStore()
         self.cards = CardStore()
+        install_samples(self.cards, self.store)
         self.install_task = None
         self.hf_base = downloader.HF_BASE            # overridable (tests use a local server)
         self.allow_local_http = False

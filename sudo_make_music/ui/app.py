@@ -1482,14 +1482,14 @@ class Root(BoxLayout):
             w.bind(size=lambda x, s: setattr(x, "text_size", s))
             return w
         head = lab(st["name"].upper(), 38, bold=True, font_size="20sp", color=(0.05, 0.05, 0.08, 1), shorten=True)
-        sub = lab("SONG CARD" + ("  (older engine)" if c.stale else ""), 18, font_size="10sp", color=(0.1, 0.1, 0.15, 0.8))
+        sub = lab(("SAMPLE CARD" if c.name.startswith("Sample: ") else "SONG CARD") + ("  (older engine)" if c.stale else ""), 18, font_size="10sp", color=(0.1, 0.1, 0.15, 0.8))
         card.add_widget(head); card.add_widget(sub)
         card.add_widget(Label(size_hint_y=None, height=dp(12)))          # sits over the header's lower edge
         card.add_widget(lab(c.name, 36, bold=True, font_size="13sp", shorten=True, shorten_from="right"))
         mm, ss = divmod(int(round(r.duration)), 60)
         facts = GridLayout(cols=2, size_hint_y=None, height=dp(66), spacing=dp(2))
         for k, v in (("Key", f"{NOTE_NAMES[st['root_pc']]} {st['mode'].replace('_', ' ')}"), ("Tempo", f"{st['bpm']:.0f} bpm"),
-                     ("Length", f"{mm}:{ss:02d}"), ("Voice", "sings lyrics" if st["vocal"] else "instrumental")):
+                     ("Length", f"{mm}:{ss:02d}"), ("Voice", "sings lyrics" if st["vocal"] and any(ln for sec in r.sections for ln in sec.lines) else "instrumental")):
             facts.add_widget(lab(k, 16, font_size="11sp", color=(0.55, 0.57, 0.64, 1)))
             facts.add_widget(lab(v, 16, font_size="12sp"))
         card.add_widget(facts)
