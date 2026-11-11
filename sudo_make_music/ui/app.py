@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import time
 from dataclasses import asdict
@@ -55,6 +56,43 @@ KV = r"""
     background_down: ''
     background_color: (0.49, 0.61, 1, 1) if self.state == 'down' else (0.17, 0.18, 0.23, 1)
     color: (0, 0, 0, 1) if self.state == 'down' else (0.91, 0.91, 0.93, 1)
+<SongCard@BoxLayout>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(330)
+    padding: dp(10)
+    spacing: dp(4)
+    accent: 0.49, 0.61, 1, 1
+    canvas.before:
+        Color:
+            rgba: 0.06, 0.06, 0.09, 1
+        RoundedRectangle:
+            pos: self.x - dp(1), self.y - dp(1)
+            size: self.width + dp(2), self.height + dp(2)
+            radius: [dp(16)]
+        Color:
+            rgba: 0.13, 0.14, 0.19, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+        Color:
+            rgba: self.accent
+        RoundedRectangle:
+            pos: self.x + dp(6), self.top - dp(74)
+            size: self.width - dp(12), dp(68)
+            radius: [dp(11), dp(11), dp(4), dp(4)]
+<Chip@Label>:
+    size_hint: None, None
+    size: self.texture_size[0] + dp(12), dp(20)
+    font_size: '11sp'
+    canvas.before:
+        Color:
+            rgba: 0.22, 0.24, 0.32, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(9)]
 <Pick@Spinner>:
     size_hint_y: None
     height: dp(40)
@@ -594,6 +632,7 @@ class Root(BoxLayout):
     model_report = StringProperty("")
     store_header = StringProperty("")
     backend_note = StringProperty("")
+    lib_mode = StringProperty("songs")          # songs | cards
     install_status = StringProperty("")
     install_progress = NumericProperty(0)
 
@@ -1358,6 +1397,14 @@ class Root(BoxLayout):
         box.clear_widgets()
         from kivy.uix.label import Label
         from kivy.factory import Factory
+        sw = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        for label, mode in (("Songs", "songs"), ("Cards", "cards")):
+            t = Factory.Tog(text=label, group="libmode", allow_no_selection=False, state="down" if self.lib_mode == mode else "normal")
+            t.bind(on_release=lambda *_a, m=mode: self.set_lib_mode(m))
+            sw.add_widget(t)
+        box.add_widget(sw)
+        if self.lib_mode == "cards":
+            return self._cards_view(box)
         rows = self.engine.history.list()
         if not rows:
             box.add_widget(Label(text="Nothing yet.", size_hint_y=None, height=dp(40)))
@@ -1383,11 +1430,177 @@ class Root(BoxLayout):
             add("MP3", lambda i=r["id"]: self.save(i, "mp3"), done)
             if (r.get("kind") or "song") in ("song", "revoice"):
                 add("Re-voice", lambda i=r["id"]: self.revoice(i), done)
+            cid = (r.get("params") or {}).get("card_id")
+            if cid and self.engine.cards.get(cid):
+                add("Card", lambda c=cid: self.card_dialog(c))
             add("Reuse", lambda r=r: self.reuse(r))
             add("Delete", lambda i=r["id"]: self.delete(i))
             for w in (title, meta, btns):
                 card.add_widget(w)
             box.add_widget(card)
+
+    # ---- song cards (procedural songs kept on file for re-use, remix and extend) ----
+    def set_lib_mode(self, mode):
+        self.lib_mode = mode
+        self.refresh_library()
+
+    def _cards_view(self, box):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        imp = Factory.Btn(text="Import a card file...")
+        imp.bind(on_release=lambda *_: self.pick_card_file())
+        box.add_widget(imp)
+        cards = self.engine.cards.list()
+        if not cards:
+            box.add_widget(Label(text="No cards yet. Every song made with the procedural engine keeps one here.",
+                                 size_hint_y=None, height=dp(50), text_size=(dp(320), None)))
+        from kivy.core.window import Window
+        from kivy.uix.gridlayout import GridLayout
+        cols = max(1, int((Window.width - dp(16)) // dp(230)))
+        grid = GridLayout(cols=cols, spacing=dp(12), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter("height"))
+        for c in cards:
+            grid.add_widget(self._song_card(c))
+        box.add_widget(grid)
+
+    ACCENTS = [(0.49, 0.61, 1, 1), (0.95, 0.55, 0.45, 1), (0.45, 0.8, 0.6, 1), (0.85, 0.7, 0.35, 1),
+               (0.75, 0.55, 0.95, 1), (0.4, 0.78, 0.85, 1)]
+
+    def _song_card(self, c):
+        """A real card: coloured header (genre), the recipe as ingredients, form chips, lyric peek, actions."""
+        import zlib
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        from kivy.uix.gridlayout import GridLayout
+        r, st = c.recipe, c.recipe.style
+        from ..backends.procedural import NOTE_NAMES
+        card = Factory.SongCard()
+        card.accent = self.ACCENTS[zlib.crc32(st["name"].encode()) % len(self.ACCENTS)]
+
+        def lab(text, h, **kw):
+            w = Label(text=text, size_hint_y=None, height=dp(h), halign=kw.pop("halign", "left"), valign="middle", **kw)
+            w.bind(size=lambda x, s: setattr(x, "text_size", s))
+            return w
+        head = lab(st["name"].upper(), 38, bold=True, font_size="20sp", color=(0.05, 0.05, 0.08, 1), shorten=True)
+        sub = lab("SONG CARD" + ("  (older engine)" if c.stale else ""), 18, font_size="10sp", color=(0.1, 0.1, 0.15, 0.8))
+        card.add_widget(head); card.add_widget(sub)
+        card.add_widget(Label(size_hint_y=None, height=dp(12)))          # sits over the header's lower edge
+        card.add_widget(lab(c.name, 36, bold=True, font_size="13sp", shorten=True, shorten_from="right"))
+        mm, ss = divmod(int(round(r.duration)), 60)
+        facts = GridLayout(cols=2, size_hint_y=None, height=dp(66), spacing=dp(2))
+        for k, v in (("Key", f"{NOTE_NAMES[st['root_pc']]} {st['mode'].replace('_', ' ')}"), ("Tempo", f"{st['bpm']:.0f} bpm"),
+                     ("Length", f"{mm}:{ss:02d}"), ("Voice", "sings lyrics" if st["vocal"] else "instrumental")):
+            facts.add_widget(lab(k, 16, font_size="11sp", color=(0.55, 0.57, 0.64, 1)))
+            facts.add_widget(lab(v, 16, font_size="12sp"))
+        card.add_widget(facts)
+        kinds = []
+        for sec in r.sections:
+            if sec.kind not in kinds:
+                kinds.append(sec.kind)
+        chips = GridLayout(cols=3, size_hint_y=None, height=dp(44), spacing=dp(4))
+        for k in kinds[:6]:
+            chips.add_widget(Factory.Chip(text=f"{k} x{sum(1 for x in r.sections if x.kind == k)}"))
+        card.add_widget(lab("RECIPE: " + str(len(r.sections)) + " sections", 16, font_size="10sp", color=(0.55, 0.57, 0.64, 1)))
+        card.add_widget(chips)
+        first = next((ln for sec in r.sections for ln in sec.lines if ln), "")
+        card.add_widget(lab(f"\u201c{first}\u201d" if first else "no lyrics", 20, font_size="11sp", italic=True,
+                            color=(0.7, 0.72, 0.8, 1), shorten=True))
+        row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(4))
+        for text, cb in (("Play", lambda i=c.id: self.render_card(i)), ("Remix", lambda i=c.id: self.card_remix_dialog(i)),
+                         ("Extend", lambda i=c.id: self.card_extend_dialog(i)), ("...", lambda i=c.id: self.card_dialog(i))):
+            b = Factory.Btn(text=text, height=dp(40))
+            b.bind(on_release=lambda *_a, cb=cb: cb())
+            row.add_widget(b)
+        card.add_widget(row)
+        return card
+
+    def _track_job(self, job, msg):
+        self.stop_audio()
+        self.result_id = ""
+        self.job = job
+        self.busy, self.progress = True, 0
+        self._say(msg)
+        self.show("create")
+
+    def render_card(self, cid):
+        try:
+            self._track_job(self.engine.submit_card(cid), "rendering the card...")
+        except Exception as e:
+            self._say(str(e), True)
+
+    def card_dialog(self, cid):
+        c = self.engine.cards.get(cid)
+        if not c:
+            return self._say("That card is gone.", True)
+        self.popup_text(c.name, f"{c.recipe.summary()}\n\nA card is the song's recipe (a few KB). It rebuilds the same song, "
+                                "and can be remixed or extended into a new card.",
+                        [("Render again", lambda: self.render_card(cid)), ("Remix...", lambda: self.card_remix_dialog(cid)),
+                         ("Extend with a new tune...", lambda: self.card_extend_dialog(cid)),
+                         ("Export card file", lambda: self.export_card(cid))])
+
+    def card_remix_dialog(self, cid):
+        def go(v):
+            words = " ".join(v["words"].split())
+            reseed = tuple(p for p in ("melody", "harmony", "drums") if p in v["reseed"].lower())
+            vocal = {"yes": True, "no": False}.get(v["vocal"].strip().lower())
+            bpm = float(v["bpm"]) if v["bpm"].strip() else None
+            card = self.engine.card_remix(cid, words=words, key=v["key"], bpm=bpm, reseed=reseed, vocal=vocal)
+            self.refresh_library()
+            self._track_job(self.engine.submit_card(card.id), "remixing...")
+        self.form_popup("Remix this card", [
+            ("words", "New style words (e.g. jazz, synthwave, sad). Blank = keep", ""), ("key", "Key (e.g. D minor). Blank = keep", ""),
+            ("bpm", "Tempo in BPM. Blank = keep", ""), ("reseed", "Make new: melody, harmony, drums (any). Blank = none", ""),
+            ("vocal", "Voice: yes / no. Blank = keep", "")], go, "Remix + render")
+
+    def card_extend_dialog(self, cid):
+        def go(v):
+            card = self.engine.card_extend(cid, float(v["seconds"] or 30), v["lyrics"])
+            self.refresh_library()
+            self._track_job(self.engine.submit_card(card.id), "extending with a new tune...")
+        self.form_popup("Extend with another tune", [
+            ("seconds", "Seconds to add", "30"), ("lyrics", "Lyrics for the new part (optional, use [verse]/[chorus])", "")],
+            go, "Extend + render")
+
+    def export_card(self, cid):
+        try:
+            c = self.engine.cards.get(cid)
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "-", c.name).strip("-") or "card"
+            dest = self.export_dir() / f"{slug}.smmcard.json"
+            self._say(f"Card saved to {self.engine.cards.export_to(cid, dest.resolve())}")
+        except Exception as e:
+            self._say(f"Export failed: {e}", True)
+
+    def delete_card(self, cid):
+        self.engine.cards.delete(cid)
+        self.refresh_library()
+
+    def pick_card_file(self):
+        from kivy.factory import Factory
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+        box = BoxLayout(orientation="vertical", spacing=dp(6))
+        chooser = FileChooserListView(path=str(Path.home()), filters=["*.json"])
+        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        ok, no = Factory.Primary(text="Import this card"), Factory.Btn(text="Cancel")
+        row.add_widget(ok)
+        row.add_widget(no)
+        box.add_widget(chooser)
+        box.add_widget(row)
+        pop = Popup(title="Choose a card file (.smmcard.json)", content=box, size_hint=(0.95, 0.9))
+        no.bind(on_release=pop.dismiss)
+
+        def go(*_):
+            if not chooser.selection:
+                return
+            pop.dismiss()
+            try:
+                c = self.engine.cards.import_file(Path(chooser.selection[0]))
+                self._say(f"Imported card '{c.name}'.")
+            except Exception as e:
+                self._say(f"Not a usable card: {e}", True)
+            self.refresh_library()
+        ok.bind(on_release=go)
+        pop.open()
 
     def reuse(self, r):
         if (r.get("kind") or "song") == "talk":

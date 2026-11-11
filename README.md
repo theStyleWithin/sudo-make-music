@@ -81,6 +81,10 @@ The **Procedural music (no AI) - BETA** engine builds songs from rules, so there
 - **The voice is robotic and does not sing real words.** A synthesized "vowel choir" follows the vowels of each syllable. For clearly sung words you still need an AI model (e.g. ACE-Step).
 - **Limits:** everything is made from synthesized instruments, so "rock" is a synth imitation and styles outside the list above fall back to the generic setup. It sounds like a game score or a synth track, not a band. Short songs drop sections (and lyric lines) that do not fit.
 
+### Song cards
+
+Every procedural song is kept as a **card** (Library > Cards): a small recipe file (a few KB) showing its genre, key, tempo, length, voice, form and first lyric. Press *Play* to rebuild the exact same song, *Remix* to change the style, key, tempo or reseed melody/harmony/drums, or *Extend* to add a new procedurally generated tune after it (the original audio stays identical). Cards can be exported and imported as `.smmcard.json` files. Imported cards are checked against a strict whitelist and are data only, never code.
+
 ## Models tab: find, install and check models in one click
 
 Open **Models**: the app looks at your PC (GPU, memory, RAM) and lists models with a note for each one: *Runs well*, *Fits with limits (use Safe mode)*, *CPU only (slow)* or *Too big*, plus **Best for your PC** and **Lightweight** tags. A GTX/RTX 2060 is pointed at models that fit 6 GB; a 5090 gets the biggest. Press **Download**: the app lists and fetches the files itself (no browsing Hugging Face), resumes interrupted downloads, verifies every file against the checksum the host publishes, then runs the safety checks below and registers the model.

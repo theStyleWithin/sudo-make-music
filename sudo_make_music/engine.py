@@ -6,6 +6,7 @@ import logging
 import os
 import queue
 import random
+import re
 import sys
 import threading
 import time
@@ -20,6 +21,8 @@ from .audio import (WavWriter, Stitcher, plan_segments, export_mp3, read_wav, re
                     resample_linear)
 from .backends import registry, SegmentRequest, SpeechRequest, Cancelled
 from .history import History
+from .backends import procedural as proc
+from .cards import CardStore
 from .models import ModelStore
 from .textsplit import split_text
 from .voices import VoiceStore
@@ -45,6 +48,8 @@ class Job:
     speed: float = 1.0
     voice_tags: str = ""
     source_id: str | None = None             # revoice: the song being re-voiced
+    recipe: dict | None = None              # procedural: render this card recipe instead of planning from text
+    card_id: str | None = None              # procedural: the card this song belongs to
     decision: dict | None = None            # pending hardware warning shown to the user
     choice: str | None = None
     decided: threading.Event = field(default_factory=threading.Event)
@@ -74,6 +79,7 @@ class Engine:
         self.models = ModelStore()
         self.voices = VoiceStore()
         self.catalog = catalog_mod.CatalogStore()
+        self.cards = CardStore()
         self.install_task = None
         self.hf_base = downloader.HF_BASE            # overridable (tests use a local server)
         self.allow_local_http = False
@@ -324,6 +330,42 @@ class Engine:
         self._q.put(job)
         return job
 
+    # ---- song cards (procedural) -----------------------------------------
+    def submit_card(self, card_id: str) -> Job:
+        """Render a saved card to audio (always the procedural engine, whatever backend is selected)."""
+        card = self.cards.get(card_id)
+        if not card:
+            raise ValueError("that card no longer exists")
+        params = self.active_params()
+        if card.recipe.duration > params.max_duration:
+            raise ValueError(f"this card is {card.recipe.duration / 60:.0f} minutes long, over the {params.max_duration // 60} minute "
+                             "maximum: raise Max duration in Settings")
+        s = self.store.value
+        job = Job(id=uuid.uuid4().hex[:12], prompt=card.name, lyrics=card.recipe.lyrics, duration=int(round(card.recipe.duration)),
+                  seed=card.recipe.seed, backend="procedural", params=params, steps=0, fmt=s.output_format,
+                  recipe=card.recipe.to_dict(), card_id=card.id)
+        self.jobs[job.id] = job
+        self._q.put(job)
+        return job
+
+    @staticmethod
+    def _base_name(name: str) -> str:
+        return re.sub(r" \((remix|extended)\)$", "", name)
+
+    def card_remix(self, card_id: str, **changes):
+        c = self.cards.get(card_id)
+        if not c:
+            raise ValueError("that card no longer exists")
+        r = proc.remix(c.recipe, max_seconds=self.active_params().max_duration, **changes)
+        return self.cards.create(f"{self._base_name(c.name)} (remix)", r, parent=c.id)
+
+    def card_extend(self, card_id: str, seconds: float, lyrics: str = ""):
+        c = self.cards.get(card_id)
+        if not c:
+            raise ValueError("that card no longer exists")
+        r = proc.extend(c.recipe, float(seconds), lyrics, max_seconds=self.active_params().max_duration)
+        return self.cards.create(f"{self._base_name(c.name)} (extended)", r, parent=c.id)
+
     def save_voice_from_job(self, job_id: str, name: str, start: float = 0.0, length: float = 15.0, tags: str = ""):
         """Keep the voice of a generated song in the (separate) voice library."""
         row = self.history.get(job_id)
@@ -402,15 +444,21 @@ class Engine:
     def _make_song(self, job: Job, backend, model_path, wav, hold: dict) -> None:
         if getattr(backend, "streams_whole_song", False):    # e.g. procedural: plans the whole song, yields blocks
             job.segments, job.message = 1, "composing"
-            req = SegmentRequest(prompt=f"{job.voice_tags}, {job.prompt}" if job.voice_tags else job.prompt, lyrics=job.lyrics,
-                                 duration=job.duration, seed=job.seed, index=0, total=1, steps=job.steps)
+            if job.recipe:                                   # re-render of a saved card
+                recipe = proc.Recipe.from_dict(job.recipe)
+            else:
+                req = SegmentRequest(prompt=f"{job.voice_tags}, {job.prompt}" if job.voice_tags else job.prompt, lyrics=job.lyrics,
+                                     duration=job.duration, seed=job.seed, index=0, total=1, steps=job.steps)
+                recipe = backend.make_recipe(req)
             writer = None
-            for blk in backend.stream_song(req, job.params, lambda f: setattr(job, "progress", f), job.cancel.is_set):
+            for blk in backend.stream_recipe(recipe, job.params, lambda f: setattr(job, "progress", f), job.cancel.is_set):
                 if writer is None:
                     writer = hold["writer"] = WavWriter(wav, blk.sample_rate, blk.audio.shape[1])
                 writer.write(blk.audio)
             writer.close()
             hold["writer"] = None
+            if not job.recipe:                               # every new procedural song is kept on file as a card
+                job.card_id = self.cards.create(job.prompt[:60] or "Untitled song", recipe).id
             return
         chunk = min(job.params.chunk_seconds, backend.max_segment_seconds)
         overlap = max(0.0, min(job.params.overlap_seconds, chunk / 2 - 0.5) if chunk > 1 else 0)
@@ -643,7 +691,7 @@ class Engine:
                          duration=job.duration, seed=job.seed, mode=job.params.mode,
                          status=status or job.status, error=job.error, kind=job.kind, voice_id=job.voice_id,
                          elapsed=(job.finished - job.started) if job.started else 0,
-                         params={**job.params.to_dict(), "steps": job.steps, "format": job.fmt})
+                         params={**job.params.to_dict(), "steps": job.steps, "format": job.fmt, "card_id": job.card_id})
 
     # ---- memory hygiene ------------------------------------------------
     @staticmethod

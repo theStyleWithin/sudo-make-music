@@ -133,7 +133,14 @@ def run() -> tuple[bool, list[str]]:
             peak = float(np.abs(a).max())
             if len(a) != 6 * SR or not 0.05 < peak <= 1.0:
                 raise RuntimeError(f"procedural render looks wrong (samples {len(a)}, peak {peak:.2f})")
-            return f"6 s rendered, peak {peak:.2f}"
+            from .cards import CardStore
+            from .backends.procedural import extend, make_recipe, remix
+            store = CardStore(Path(home) / "cards")
+            c = store.create("selfcheck", make_recipe("lo-fi chill", "[verse]\nhello world", 12.0, 3))
+            e = extend(remix(c.recipe, words="jazz", reseed=("drums",), new_seed=1), 8, new_seed=2)
+            if store.get(c.id).recipe != c.recipe or e.duration <= c.recipe.duration:
+                raise RuntimeError("song cards (save, remix, extend) did not work")
+            return f"6 s rendered, peak {peak:.2f}; song cards save, remix and extend"
 
         check("procedural music (beta)", procedural)
         check("model list (Models tab)", model_list)

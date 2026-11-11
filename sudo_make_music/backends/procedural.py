@@ -10,9 +10,10 @@ to disk, so a 30 minute song needs no more memory than a 1 minute one.
 It sounds like a game score or a synth track, not a band. That is why it is labelled BETA."""
 from __future__ import annotations
 
+import copy
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 
 import numpy as np
@@ -108,6 +109,7 @@ class Plan:
     total_bars: int
     duration: float
     seed: int
+    seeds: dict = field(default_factory=dict)
 
     @property
     def spb(self) -> float:        # seconds per bar (4/4)
@@ -212,40 +214,203 @@ def _allocate(weights: list[float], total: int, min_bars: int) -> list[int]:
     return bars
 
 
-# ------------------------------------------------------------------ the plan (pure symbolic: easy to test)
+# ------------------------------------------------------------------ the recipe (what a card stores) and the plan
+ENGINE_VERSION = 1        # bump when planning/rendering changes: older cards are then flagged
+MAX_SECONDS = 7200
+NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+@dataclass
+class SectionRecipe:
+    kind: str
+    bars: int
+    prog: list                                    # chord root degrees (one per chord slot)
+    lines: list = field(default_factory=list)     # lyric lines
+    motif: str = "verse"                          # sections sharing a motif key repeat the same tune
+
+
+@dataclass
+class Recipe:
+    """Everything needed to rebuild a song exactly: tiny, plain data, no audio and no code."""
+    prompt: str
+    lyrics: str
+    seed: int
+    style: dict
+    seeds: dict                                   # independent seeds: drums / melody / harmony
+    sections: list
+    engine: int = ENGINE_VERSION
+    extensions: int = 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(d: dict) -> "Recipe":
+        d = dict(d)
+        d["sections"] = [SectionRecipe(**x) for x in d["sections"]]
+        return Recipe(**d)
+
+    @property
+    def total_bars(self) -> int:
+        return sum(s.bars for s in self.sections)
+
+    @property
+    def duration(self) -> float:
+        return self.total_bars * 240.0 / float(self.style["bpm"])
+
+    def summary(self) -> str:
+        st = self.style
+        mm, ss = divmod(int(round(self.duration)), 60)
+        return (f"{st['name']} - {NOTE_NAMES[st['root_pc']]} {st['mode'].replace('_', ' ')} - {st['bpm']:.0f} bpm - "
+                f"{mm}:{ss:02d} - {len(self.sections)} sections")
+
+
 def scale_note(base: int, scale: list, degree: int) -> int:
     return base + 12 * (degree // len(scale)) + scale[degree % len(scale)]
 
 
-def plan_song(prompt: str, lyrics: str, duration: float, seed: int) -> Plan:
-    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, zlib.crc32(f"{prompt}\n{lyrics}".encode())])
-    style = parse_style(prompt, lyrics, rng)
-    scale = SCALES[style.mode]
-    total_bars = max(2, round(duration * style.bpm / 240.0))
-    bpm = 240.0 * total_bars / duration                   # nudge the tempo so the song lands exactly on the requested length
-    form: list[tuple[str, list[str]]] = parse_lyrics(lyrics) if lyrics.strip() else []
-    if not form:
-        form = [(k, []) for k in FORM_DEFAULT]
-    elif style.vocal and form[0][0] not in ("intro",) and total_bars >= 24:
-        form = [("intro", [])] + form
-    while len(form) > 1 and total_bars < 3 * len(form):    # short song: drop the least important sections first
+def _fit(form: list, total_bars: int) -> tuple[list, list]:
+    """Drop the least important sections until the form fits, then spread the bars."""
+    form = list(form)
+    while len(form) > 1 and total_bars < 3 * len(form):
         i = min(range(len(form)), key=lambda i: (PRIORITY[form[i][0]], -i))
         form.pop(i)
     weights = [float(max(BASE_BARS[k], min(16, 2 * len(l)) if l else 0)) for k, l in form]
-    bars = _allocate(weights, total_bars, 2 if total_bars >= 2 * len(form) else 1)
-    progs = PROG_MINOR if style.mode in MINORISH else PROG_MAJOR
-    pick = {k: progs[int(rng.integers(len(progs)))] for k in ("verse", "chorus", "bridge")}
+    return form, _allocate(weights, total_bars, 2 if total_bars >= 2 * len(form) else 1)
+
+
+def _progs(mode: str) -> list:
+    return PROG_MINOR if mode in MINORISH else PROG_MAJOR
+
+
+def make_recipe(prompt: str, lyrics: str, duration: float, seed: int) -> Recipe:
+    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, zlib.crc32(f"{prompt}\n{lyrics}".encode())])
+    style = parse_style(prompt, lyrics, rng)
+    total_bars = max(2, round(duration * style.bpm / 240.0))
+    style.bpm = 240.0 * total_bars / duration              # nudge the tempo so the song lands exactly on the requested length
+    form: list[tuple[str, list[str]]] = parse_lyrics(lyrics) if lyrics.strip() else []
+    if not form:
+        form = [(k, []) for k in FORM_DEFAULT]
+    elif style.vocal and form[0][0] != "intro" and total_bars >= 24:
+        form = [("intro", [])] + form
+    form, bars = _fit(form, total_bars)
+    seeds = {k: int(rng.integers(1, 2 ** 31 - 1)) for k in ("drums", "melody", "harmony")}
+    progs = _progs(style.mode)
+    hrng = np.random.default_rng(seeds["harmony"])
+    pick = {k: progs[int(hrng.integers(len(progs)))] for k in ("verse", "chorus")}
     pick["bridge"] = progs[(progs.index(pick["verse"]) + 2) % len(progs)]
-    chord_len = 1 if bpm >= 80 else 2
-    base = 60 + (((style.root_pc + 5) % 12) - 5)
-    secs: list[Section] = []
-    motifs: dict[str, list] = {}
+    secs = []
     for (kind, lines), nb in zip(form, bars):
-        prog = pick.get(kind if kind in pick else "verse")
-        sec = Section(kind, nb, [prog[(b // chord_len) % len(prog)] for b in range(nb)], list(lines))
-        _melody(sec, style, scale, base, rng, motifs)
+        key = kind if kind in pick else "verse"
+        secs.append(SectionRecipe(kind, nb, list(pick[key]), list(lines), motif=key))
+    return Recipe(prompt, lyrics, int(seed), asdict(style), seeds, secs)
+
+
+def plan_from_recipe(r: Recipe) -> Plan:
+    style = Style(**r.style)
+    scale = SCALES[style.mode]
+    base = 60 + (((style.root_pc + 5) % 12) - 5)
+    chord_len = 1 if style.bpm >= 80 else 2
+    motifs: dict[str, list] = {}
+    secs: list[Section] = []
+    for i, sr in enumerate(r.sections):
+        chords = [sr.prog[(b // chord_len) % len(sr.prog)] for b in range(sr.bars)]
+        sec = Section(sr.kind, sr.bars, chords, list(sr.lines))
+        _melody(sec, style, scale, base, np.random.default_rng([r.seeds["melody"], i]), motifs, sr.motif, r.seeds["melody"])
         secs.append(sec)
-    return Plan(style, bpm, scale, secs, total_bars, duration, int(seed))
+    total = sum(x.bars for x in secs)
+    return Plan(style, style.bpm, scale, secs, total, total * 240.0 / style.bpm, r.seed, dict(r.seeds))
+
+
+def plan_song(prompt: str, lyrics: str, duration: float, seed: int) -> Plan:
+    return plan_from_recipe(make_recipe(prompt, lyrics, duration, seed))
+
+
+def restyle_fields(words: str) -> dict:
+    """Genre-preset style fields for words like 'jazz' or 'synthwave' (empty if no genre word matches)."""
+    text = words.lower()
+    cfg = next((c for kws, c in GENRES if any(k in text for k in kws)), None)
+    out: dict = {}
+    if cfg:
+        out.update({k: cfg[k] for k in ("name", "swing", "drums", "lead", "pad", "bass", "density", "echo")})
+    return out
+
+
+def remix(recipe: Recipe, words: str = "", key: str = "", bpm: float | None = None, reseed: tuple = (),
+          vocal: bool | None = None, new_seed: int | None = None, max_seconds: float = MAX_SECONDS) -> Recipe:
+    """A changed copy of the recipe: restyle, transpose, retempo, new melody/harmony/drums, voice on/off."""
+    r = copy.deepcopy(recipe)
+    st = r.style
+    text = words.lower()
+    if words:
+        st.update(restyle_fields(words))
+        m = re.search(r"(\d{2,3})\s*bpm", text)
+        if m and 40 <= int(m.group(1)) <= 220:
+            st["bpm"] = float(m.group(1))
+        if any(k in text for k in ANGRY):
+            st["mode"] = "phrygian"
+        elif any(k in text for k in SAD) and st["mode"] not in MINORISH:
+            st["mode"] = "minor"
+        elif any(k in text for k in HAPPY) and st["mode"] in MINORISH:
+            st["mode"] = "major" if st["mode"] != "pentatonic_minor" else "pentatonic_major"
+    k = re.search(r"\b([a-g])(#|b)?\s*(major|minor|dorian|phrygian|lydian)?\b", key.lower())
+    if k:
+        st["root_pc"] = ({"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}[k.group(1)] + {"#": 1, "b": -1}.get(k.group(2) or "", 0)) % 12
+        if k.group(3):
+            st["mode"] = k.group(3)
+    if bpm:
+        st["bpm"] = float(min(220, max(40, bpm)))
+    if vocal is not None:
+        st["vocal"] = bool(vocal)
+    rng = np.random.default_rng(new_seed)                # fresh entropy when no seed is given; the result is stored in the card
+    for part in reseed:
+        if part in ("melody", "drums"):
+            r.seeds[part] = int(rng.integers(1, 2 ** 31 - 1))
+        elif part == "harmony":
+            r.seeds["harmony"] = int(rng.integers(1, 2 ** 31 - 1))
+            progs = _progs(st["mode"])
+            pick = {k2: progs[int(rng.integers(len(progs)))] for k2 in ("verse", "chorus")}
+            pick["bridge"] = progs[(progs.index(pick["verse"]) + 2) % len(progs)]
+            for sec in r.sections:
+                sec.prog = list(pick[sec.motif.split("-")[-1] if sec.motif.split("-")[-1] in pick else "verse"])
+    if r.duration > max_seconds:
+        raise ValueError("that tempo makes the song longer than the maximum length")
+    return r
+
+
+def extend(recipe: Recipe, seconds: float, lyrics: str = "", new_seed: int | None = None,
+           max_seconds: float = MAX_SECONDS) -> Recipe:
+    """Append another procedurally generated tune in the same key, tempo and instruments.
+    The song is re-planned as a whole, so the join is seamless and the ending moves to the new end."""
+    r = copy.deepcopy(recipe)
+    st = Style(**r.style)
+    spb = 240.0 / st.bpm
+    bars = max(2, round(seconds / spb))
+    ended_with_outro = bool(r.sections) and r.sections[-1].kind == "outro"
+    if ended_with_outro:
+        r.sections.pop()                                 # an outro in the middle of a song would end it early
+    if (r.total_bars + bars) * spb > max_seconds:
+        raise ValueError("the song would be longer than the maximum length")
+    n = r.extensions + 1
+    rng = np.random.default_rng(new_seed)
+    form = parse_lyrics(lyrics) if lyrics.strip() else [("verse", []), ("chorus", []), ("verse", []), ("chorus", [])]
+    if ended_with_outro or bars >= 24:
+        form = form + [("outro", [])]
+    form, alloc = _fit(form, bars)
+    progs = _progs(st.mode)
+    used = {tuple(sec.prog) for sec in r.sections}
+    fresh = [p for p in progs if tuple(p) not in used] or progs
+    verse_prog = fresh[int(rng.integers(len(fresh)))]
+    chorus_prog = next((p for p in progs if p != verse_prog and tuple(p) in {tuple(q) for q in fresh}), None) or \
+        progs[(progs.index(verse_prog) + 1) % len(progs)]
+    pick = {"verse": verse_prog, "chorus": chorus_prog, "bridge": progs[(progs.index(verse_prog) + 2) % len(progs)]}
+    for (kind, lines), nb in zip(form, alloc):
+        key = kind if kind in pick else "verse"
+        r.sections.append(SectionRecipe(kind, nb, list(pick[key]), list(lines), motif=f"x{n}-{key}"))
+    r.extensions = n
+    if lyrics.strip():
+        r.lyrics = (r.lyrics + "\n" + lyrics).strip()
+    return r
 
 
 def _snap(scale: list, deg: int, chord: int) -> int:
@@ -259,8 +424,7 @@ def _walk(rng, deg: int, lo: int = 5, hi: int = 14) -> int:
     return int(min(hi, max(lo, deg)))
 
 
-def _melody(sec: Section, style: Style, scale: list, base: int, rng, motifs: dict) -> None:
-    n = len(scale)
+def _melody(sec: Section, style: Style, scale: list, base: int, rng, motifs: dict, key: str, melody_seed: int) -> None:
     lines = sec.lines if style.vocal else []
     bpl = 2 if len(lines) * 2 <= sec.bars else 1
     deg = 8
@@ -279,15 +443,14 @@ def _melody(sec: Section, style: Style, scale: list, base: int, rng, motifs: dic
             nxt = pos[k + 1] if k + 1 < len(pos) else steps
             sec.notes.append(Note(bar + b, st, int(min(8, max(1, nxt - p))), scale_note(base, scale, deg), v))
         bar += bpl
-    # instrumental melody (lead) for the rest of the section
-    key = sec.kind if sec.kind in ("verse", "chorus", "bridge") else "verse"
-    if key not in motifs:
+    if key not in motifs:                                  # the instrumental tune; same key = same tune
+        mrng = np.random.default_rng([melody_seed, zlib.crc32(key.encode())])
         pats = [r for r in RHYTHMS if (len(r) <= 4) == (style.density < 0.5)] or RHYTHMS
         motif, d = [], 8
         for b in range(2):
-            pat = pats[int(rng.integers(len(pats)))]
+            pat = pats[int(mrng.integers(len(pats)))]
             for i, st in enumerate(pat):
-                d = _walk(rng, d)
+                d = _walk(mrng, d)
                 length = (pat[i + 1] if i + 1 < len(pat) else 16) - st
                 motif.append((b, st, int(min(6, max(1, length))), d - 7))
         motifs[key] = motif
@@ -387,7 +550,7 @@ DRUMS = {  # step lists on a 16 grid
 class Renderer:
     def __init__(self, plan: Plan):
         self.p = plan
-        self.rng = np.random.default_rng([plan.seed & 0xFFFFFFFF, 7])
+        self.rng = np.random.default_rng([int(plan.seeds.get("drums", plan.seed)) & 0xFFFFFFFF, 7])
         self.kit = _drum_kit(self.rng, plan.style.name == "chiptune")
         self.base = 60 + (((plan.style.root_pc + 5) % 12) - 5)
 
@@ -490,12 +653,18 @@ class ProceduralBackend(ModelBackend):
     def unload(self) -> None:
         self._loaded = False
 
+    def make_recipe(self, req: SegmentRequest) -> Recipe:
+        return make_recipe(req.prompt, req.lyrics, float(req.duration), int(req.seed))
+
     def plan(self, req: SegmentRequest) -> Plan:
-        return plan_song(req.prompt, req.lyrics, float(req.duration), int(req.seed))
+        return plan_from_recipe(self.make_recipe(req))
 
     def stream_song(self, req: SegmentRequest, params: GenParams, progress, cancelled):
-        """Yields SegmentResult blocks (one per section) that concatenate to exactly the requested duration."""
-        plan = self.plan(req)
+        yield from self.stream_recipe(self.make_recipe(req), params, progress, cancelled)
+
+    def stream_recipe(self, recipe: Recipe, params: GenParams, progress, cancelled):
+        """Yields SegmentResult blocks (one per section) that concatenate to exactly the recipe's length."""
+        plan = plan_from_recipe(recipe)
         r = Renderer(plan)
         total = int(round(plan.duration * SR))
         tail = int((plan.spb + 1.0) * SR)
