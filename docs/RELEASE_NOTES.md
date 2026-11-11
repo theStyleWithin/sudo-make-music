@@ -1,7 +1,11 @@
-# sudo make music 1.0.1
+# sudo make music 1.0.2
 
 Offline AI music generation for mid-range PCs (built for ~6GB VRAM / 16GB RAM). No cloud, no content filter,
 every model is a local, swappable folder.
+
+## What is new in 1.0.2
+- **Procedural music (BETA):** a no-AI, no-download engine that builds songs from rules and sings your lyrics. Instant, tiny, and the default on Android.
+- **Song cards:** every procedural song is kept as a card in Library > Cards, showing its genre, key, tempo, length, sections and first lyric. Play it again, remix it (new style, key, tempo, or new melody/harmony/drums) or extend it with a new tune. Cards can be exported and imported as small files; imported cards are checked and are data only.
 
 ## What is new since 1.0.0
 - **Windows fix:** the 1.0.0 Windows exe could not open its window (Kivy crashed at startup in a windowed exe). Fixed, and every Windows build now has to pass a built-in self-check in CI before it is published.
