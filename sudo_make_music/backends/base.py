@@ -66,6 +66,8 @@ class ModelBackend(ABC):
     min_vram_mb: int = 0             # informational, shown in UI
     needs_model: bool = False        # True -> a folder from the ModelStore must be selected
     default_model_name: str = ""      # backends with a downloadable default get an empty folder registered
+    beta: bool = False                 # shown as BETA in the UI
+    streams_whole_song: bool = False   # plans the whole song itself and yields audio blocks (no chunk stitching)
     uses_gpu: bool = True            # False for backends that never touch a GPU (no hardware warnings)
     can_switch_device_live: bool = True   # False if CUDA<->CPU only works from a fresh process
     supports_context: bool = False   # can condition on the previous segment's tail
@@ -109,7 +111,7 @@ class ModelBackend(ABC):
         return dict(id=self.id, name=self.name, description=self.description,
                     available=ok, unavailable_reason=why,
                     max_segment_seconds=self.max_segment_seconds, needs_model=self.needs_model,
-                    kind=self.kind, supports_cloning=self.supports_cloning, preset_voices=list(self.preset_voices),
+                    beta=self.beta, kind=self.kind, supports_cloning=self.supports_cloning, preset_voices=list(self.preset_voices),
                     supports_context=self.supports_context,
                     min_vram_mb=self.min_vram_mb)
 

@@ -400,6 +400,18 @@ class Engine:
         self._clear_cuda()
 
     def _make_song(self, job: Job, backend, model_path, wav, hold: dict) -> None:
+        if getattr(backend, "streams_whole_song", False):    # e.g. procedural: plans the whole song, yields blocks
+            job.segments, job.message = 1, "composing"
+            req = SegmentRequest(prompt=f"{job.voice_tags}, {job.prompt}" if job.voice_tags else job.prompt, lyrics=job.lyrics,
+                                 duration=job.duration, seed=job.seed, index=0, total=1, steps=job.steps)
+            writer = None
+            for blk in backend.stream_song(req, job.params, lambda f: setattr(job, "progress", f), job.cancel.is_set):
+                if writer is None:
+                    writer = hold["writer"] = WavWriter(wav, blk.sample_rate, blk.audio.shape[1])
+                writer.write(blk.audio)
+            writer.close()
+            hold["writer"] = None
+            return
         chunk = min(job.params.chunk_seconds, backend.max_segment_seconds)
         overlap = max(0.0, min(job.params.overlap_seconds, chunk / 2 - 0.5) if chunk > 1 else 0)
         plan = plan_segments(job.duration, chunk, overlap)

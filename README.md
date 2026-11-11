@@ -72,6 +72,15 @@ Desktop packages ship only the light app. On first run use **Settings > Install 
 
 Every value (max duration, chunk, crossfade, offload, quantization, seed, steps) can be overridden in Settings.
 
+## Procedural music (BETA): no AI, no download
+
+The **Procedural music (no AI) - BETA** engine builds songs from rules, so there is nothing to download or scan and it runs instantly on any PC (and on Android). It is the lightest option in the app, for PCs that cannot run the AI models and for people who would rather not download model files. Pick it as the *Music model backend* on the Create screen, or press *Use for music* at the top of the Models tab.
+- **Same input = same song.** The seed, your style words and your lyrics fully decide the result, and long songs stay coherent because the whole song (intro, verse, chorus, bridge, outro) is planned before it is played.
+- **Style words it understands:** lo-fi / chill / hip hop, house / edm / dance, techno, trance, synthwave, chiptune / 8-bit, rock / metal / punk, jazz / swing, ambient / cinematic / dreamy. Anything else falls back to a generic pop-like setup. Mood words (sad, dark, rain; happy, bright, upbeat; angry), tempo words (slow, fast), an explicit `120 bpm` and a key (`in D minor`) change the music. `instrumental` turns the voice off.
+- **Your lyrics:** `[verse]`, `[chorus]`, `[bridge]`... tags set the structure (blocks without tags alternate verse/chorus), and every line becomes a melody phrase with one note per syllable.
+- **The voice is robotic and does not sing real words.** A synthesized "vowel choir" follows the vowels of each syllable. For clearly sung words you still need an AI model (e.g. ACE-Step).
+- **Limits:** everything is made from synthesized instruments, so "rock" is a synth imitation and styles outside the list above fall back to the generic setup. It sounds like a game score or a synth track, not a band. Short songs drop sections (and lyric lines) that do not fit.
+
 ## Models tab: find, install and check models in one click
 
 Open **Models**: the app looks at your PC (GPU, memory, RAM) and lists models with a note for each one: *Runs well*, *Fits with limits (use Safe mode)*, *CPU only (slow)* or *Too big*, plus **Best for your PC** and **Lightweight** tags. A GTX/RTX 2060 is pointed at models that fit 6 GB; a 5090 gets the biggest. Press **Download**: the app lists and fetches the files itself (no browsing Hugging Face), resumes interrupted downloads, verifies every file against the checksum the host publishes, then runs the safety checks below and registers the model.

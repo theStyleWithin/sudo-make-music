@@ -7,6 +7,9 @@ It runs fully on-device; there is no server.
 ## Build
 The APK is a debug build made by CI with a pinned toolchain (`buildozer.spec`: python-for-android `v2024.01.21`, NDK 25b, API 33; CI pins buildozer 1.5.0 and Cython 0.29.37 and disables ccache, which broke numpy's link step). Newer python-for-android moved to Python 3.14 and its pip step then rejected the Android wheels of pure-Python dependencies.
 
+## Procedural music (default on Android)
+The Android app now defaults to **Procedural music (no AI) - BETA** (`backends/procedural.py`, numpy only): it makes real, if simple, songs on the phone with nothing to download. The AI model path below is still blocked.
+
 ## Status
 - Done: UI, engine, history, settings, WAV export, build config + CI job. Only the Mock synth backend exists on Android today.
 - **Not done: a phone-capable AI model backend.** ACE-Step (billions of parameters, needs CUDA/PyTorch) cannot run on a phone.

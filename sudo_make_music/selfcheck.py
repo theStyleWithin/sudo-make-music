@@ -125,6 +125,17 @@ def run() -> tuple[bool, list[str]]:
                 raise RuntimeError("the safety scanner did not flag a booby-trapped pickle")
             return "flags a booby-trapped pickle without running it"
 
+        def procedural():
+            from .backends.base import SegmentRequest
+            from .backends.procedural import ProceduralBackend, SR
+            req = SegmentRequest("lo-fi chill", "[verse]\nhello world", 6.0, 1)
+            a = np.concatenate([x.audio for x in ProceduralBackend().stream_song(req, None, lambda f: None, lambda: False)])
+            peak = float(np.abs(a).max())
+            if len(a) != 6 * SR or not 0.05 < peak <= 1.0:
+                raise RuntimeError(f"procedural render looks wrong (samples {len(a)}, peak {peak:.2f})")
+            return f"6 s rendered, peak {peak:.2f}"
+
+        check("procedural music (beta)", procedural)
         check("model list (Models tab)", model_list)
         check("safety scanner", scanner)
         check("mock song + mp3 export", song)

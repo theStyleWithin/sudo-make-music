@@ -154,6 +154,15 @@ KV = r"""
                         Pick:
                             id: backend
                             on_text: root.on_backend(self.text)
+                        Label:
+                            text: root.backend_note
+                            size_hint_y: None
+                            height: (self.texture_size[1] + dp(6)) if root.backend_note else 0
+                            opacity: 1 if root.backend_note else 0
+                            text_size: self.width, None
+                            halign: 'left'
+                            font_size: '12sp'
+                            color: 1, 0.8, 0.3, 1
                     BoxLayout:
                         id: talk_box
                         orientation: 'vertical'
@@ -584,6 +593,7 @@ class Root(BoxLayout):
     result_kind = StringProperty("")
     model_report = StringProperty("")
     store_header = StringProperty("")
+    backend_note = StringProperty("")
     install_status = StringProperty("")
     install_progress = NumericProperty(0)
 
@@ -637,6 +647,23 @@ class Root(BoxLayout):
                 if bid == cur:
                     spinner.text = label
         self._avail = bool(avail)
+        self._update_backend_note()
+
+    def _update_backend_note(self):
+        try:
+            info = self.engine._backend(self.engine.store.value.backend).info()
+            d = info["description"]
+            self.backend_note = (d if d.startswith("BETA") else "BETA - " + d) if info.get("beta") else ""
+        except Exception:
+            self.backend_note = ""
+
+    def use_backend(self, bid):
+        self.engine.store.value.update({"backend": bid})
+        self.engine.store.save()
+        self.refresh_status()
+        self.refresh_models()
+        self.refresh_store()
+        self._say("Music engine changed: it is used for the next song.")
 
     def on_backend(self, label):
         bid = getattr(self, "_backend_by_name", {}).get(label)
@@ -940,6 +967,24 @@ class Root(BoxLayout):
         box = self.ids.store_list
         box.clear_widgets()
         busy = bool(e.install_task and e.install_task.status == "running")
+        if role in (None, "music"):
+            card = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(3))
+            using = e.store.value.backend == "procedural"
+            txt = ("[b]Procedural music (no AI)[/b]  [color=e8c04a]BETA[/color]  [color=5fd38d]Built in: nothing to download[/color]\n"
+                   "Builds songs from rules: style words pick tempo, scale, chords and instruments; your lyrics shape the structure and a "
+                   "robotic vowel voice follows each line. Instant and offline on any PC or phone. It sounds like a game score or synth "
+                   "track, not a band, and its voice does not pronounce real words.")
+            lab = Label(text=txt, markup=True, size_hint_y=None, halign="left", valign="top")
+            lab.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
+            lab.bind(texture_size=lambda w, sz, card=card: (setattr(w, "height", sz[1] + dp(4)), setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(6))))
+            card.add_widget(lab)
+            btns = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
+            b = (Factory.Btn if using else Factory.Primary)(text="In use for music" if using else "Use for music", disabled=using)
+            b.bind(on_release=lambda *_: self.use_backend("procedural"))
+            btns.add_widget(b)
+            card.add_widget(btns)
+            card.height = dp(190)
+            box.add_widget(card)
         for r in e.catalog_rows():
             if role and r["role"] != role:
                 continue
