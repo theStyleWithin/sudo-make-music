@@ -1,7 +1,13 @@
-# sudo make music 1.0.3
+# sudo make music 1.0.4
 
 Offline AI music generation for mid-range PCs (built for ~6GB VRAM / 16GB RAM). No cloud, no content filter,
 every model is a local, swappable folder.
+
+## What is new in 1.0.4
+- **Fix: playing a song card could freeze or crash the app.** Sound now plays through the operating system's own player (Windows' built-in player, or a separate player program on Linux) instead of inside the app, so a sound problem can no longer take the app down. If no player works, you now get a clear message instead of a freeze.
+- **Play now plays.** Pressing Play on a song card renders it and starts playing at once.
+- **Now-playing bar** on every screen, with the song title, progress and a Stop button.
+- If the app ever crashes hard, it now leaves a note in `crash.log` in its data folder.
 
 ## What is new in 1.0.3
 - **Sample cards:** the app now starts with eight ready-made song cards (lo-fi, house, synthwave, ambient, rock, jazz, trance, chiptune) in Library > Cards. Play, remix or extend them as a reference for your own songs. They are added once and you can delete them.

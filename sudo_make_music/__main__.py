@@ -29,6 +29,12 @@ def main() -> None:
             if subprocess.call(cmd) != 0:
                 raise SystemExit(1)
         return
+    try:                                  # if the app ever dies hard (a native crash), leave a note in the data folder
+        import faulthandler
+        from . import paths
+        faulthandler.enable(open(paths.home() / "crash.log", "a"))
+    except Exception:
+        pass
     from .ui.app import run
     run()
 

@@ -10,7 +10,6 @@ from pathlib import Path
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.core.audio import SoundLoader
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import StringProperty, NumericProperty, BooleanProperty
@@ -20,6 +19,7 @@ from kivy.utils import platform
 from .. import memory, runtime
 from ..command import COMMAND, allowed_input, is_command
 from ..engine import Engine
+from ..player import AudioPlayer, PlayerError
 
 KV = r"""
 #:import dp kivy.metrics.dp
@@ -596,6 +596,37 @@ KV = r"""
                             color: 0.55, 0.57, 0.64, 1
     BoxLayout:
         size_hint_y: None
+        height: dp(48) if root.now_title else 0
+        opacity: 1 if root.now_title else 0
+        disabled: not root.now_title
+        padding: dp(8), dp(4)
+        spacing: dp(10)
+        canvas.before:
+            Color:
+                rgba: 0.09, 0.10, 0.14, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        Label:
+            text: root.now_title
+            shorten: True
+            halign: 'left'
+            text_size: self.size
+            valign: 'middle'
+        ProgressBar:
+            max: 1
+            value: root.now_pos
+            size_hint_x: 0.5
+        Btn:
+            text: 'Stop'
+            size_hint_x: None
+            width: dp(90)
+            height: dp(40)
+            size_hint_y: None
+            pos_hint: {'center_y': 0.5}
+            on_release: root.stop_audio()
+    BoxLayout:
+        size_hint_y: None
         height: dp(48)
         Btn:
             text: 'Create'
@@ -622,6 +653,8 @@ class Root(BoxLayout):
     progress = NumericProperty(0)
     busy = BooleanProperty(False)
     playing = BooleanProperty(False)
+    now_title = StringProperty("")          # the now-playing bar (every screen)
+    now_pos = NumericProperty(0)
     result_id = StringProperty("")
     max_duration = NumericProperty(300)
     effective = StringProperty("")
@@ -641,8 +674,8 @@ class Root(BoxLayout):
         self.engine = engine
         self.installer = runtime.Installer()
         self.job = None
-        self.sound = None
-        self.sound_id = None
+        self.player = AudioPlayer()
+        self._autoplay = None            # job id of a card being rendered to play at once
         Clock.schedule_once(lambda dt: self._init_ui(), 0)
         Clock.schedule_interval(self._tick, 0.5)
 
@@ -1322,10 +1355,17 @@ class Root(BoxLayout):
         if self.install_log or self.installer.running:
             snap = self.installer.snapshot()
             self.install_log = "\n".join(snap["log"][-8:]) + ("\nDONE - restart the app." if snap["ok"] else "")
+        if self.playing:
+            if self.player.playing:
+                self.now_pos = self.player.fraction
+            else:
+                self.stop_audio()
         j = self.job
         if not j:
             return
         self.progress = j.progress
+        if self._autoplay == j.id and j.status in ("queued", "running"):
+            self.now_title, self.now_pos = f"Rendering {j.prompt}...", j.progress
         self._sync_warning(j)
         if j.status == "needs_input":
             self._say(f"{j.message} - waiting for your choice")
@@ -1336,11 +1376,16 @@ class Root(BoxLayout):
         self._sync_warning(None)
         self.busy = False
         self.job = None
+        auto, self._autoplay = self._autoplay == j.id, None
+        if auto and j.status != "done":
+            self.now_title = ""
         if j.status == "done":
             self.progress = 1
             self._say(f"Done. Seed {j.seed}.")
             self.result_id, self.result_kind = j.id, j.kind
             self.refresh_voices()
+            if auto:
+                self.play_file(self.engine.output_path(j.id, "wav"), j.prompt)
         elif j.status == "error":
             self._say(j.error, True)
         else:
@@ -1350,25 +1395,31 @@ class Root(BoxLayout):
 
     # ---- playback / export ----------------------------------------------
     def stop_audio(self):
-        if self.sound:
-            self.sound.stop()
-            self.sound = None
+        self.player.stop()
         self.playing = False
+        self.now_title, self.now_pos = "", 0
 
     def toggle_play(self, job_id):
-        self.play_file(self.engine.output_path(job_id, "wav"))
+        self.play_file(self.engine.output_path(job_id, "wav"), self._title_of(job_id))
 
-    def play_file(self, path):
+    def _title_of(self, job_id):
+        try:
+            row = self.engine.history.get(job_id)
+            return (row or {}).get("prompt", "") or "Song"
+        except Exception:
+            return "Song"
+
+    def play_file(self, path, title=""):
         if self.playing:
             return self.stop_audio()
         if not path:
             return self._say("audio file missing", True)
-        self.sound = SoundLoader.load(str(path))
-        if not self.sound:
-            return self._say("could not play this file", True)
-        self.sound.bind(on_stop=lambda *_: setattr(self, "playing", False))
-        self.sound.play()
+        try:
+            self.player.play(path)
+        except PlayerError as e:
+            return self._say(str(e), True)
         self.playing = True
+        self.now_title, self.now_pos = title or "Playing", 0
 
     @staticmethod
     def export_dir() -> Path:
@@ -1506,7 +1557,7 @@ class Root(BoxLayout):
         card.add_widget(lab(f"\u201c{first}\u201d" if first else "no lyrics", 20, font_size="11sp", italic=True,
                             color=(0.7, 0.72, 0.8, 1), shorten=True))
         row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(4))
-        for text, cb in (("Play", lambda i=c.id: self.render_card(i)), ("Remix", lambda i=c.id: self.card_remix_dialog(i)),
+        for text, cb in (("Play", lambda i=c.id: self.render_card(i, play=True)), ("Remix", lambda i=c.id: self.card_remix_dialog(i)),
                          ("Extend", lambda i=c.id: self.card_extend_dialog(i)), ("...", lambda i=c.id: self.card_dialog(i))):
             b = Factory.Btn(text=text, height=dp(40))
             b.bind(on_release=lambda *_a, cb=cb: cb())
@@ -1514,17 +1565,22 @@ class Root(BoxLayout):
         card.add_widget(row)
         return card
 
-    def _track_job(self, job, msg):
+    def _track_job(self, job, msg, show=True):
         self.stop_audio()
         self.result_id = ""
         self.job = job
         self.busy, self.progress = True, 0
         self._say(msg)
-        self.show("create")
+        if show:
+            self.show("create")
 
-    def render_card(self, cid):
+    def render_card(self, cid, play=False):
+        """Build the card's song. With play=True it starts playing as soon as it is ready (and you stay where you are)."""
         try:
-            self._track_job(self.engine.submit_card(cid), "rendering the card...")
+            job = self.engine.submit_card(cid)
+            if play:
+                self._autoplay = job.id
+            self._track_job(job, "rendering the card...", show=not play)
         except Exception as e:
             self._say(str(e), True)
 
@@ -1534,7 +1590,7 @@ class Root(BoxLayout):
             return self._say("That card is gone.", True)
         self.popup_text(c.name, f"{c.recipe.summary()}\n\nA card is the song's recipe (a few KB). It rebuilds the same song, "
                                 "and can be remixed or extended into a new card.",
-                        [("Render again", lambda: self.render_card(cid)), ("Remix...", lambda: self.card_remix_dialog(cid)),
+                        [("Play now", lambda: self.render_card(cid, play=True)), ("Render again", lambda: self.render_card(cid)), ("Remix...", lambda: self.card_remix_dialog(cid)),
                          ("Extend with a new tune...", lambda: self.card_extend_dialog(cid)),
                          ("Export card file", lambda: self.export_card(cid))])
 
@@ -1640,6 +1696,7 @@ class SudoMakeMusicApp(App):
         return self.root_widget
 
     def on_stop(self):
+        self.root_widget.player.stop()
         self.engine.shutdown()
 
 
