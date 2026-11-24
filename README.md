@@ -3,6 +3,7 @@
 Offline AI music generation for mid-range PCs. Target: **RTX 2060 6GB + 16GB RAM**, Linux first (Arch/CachyOS), Windows second.
 No cloud APIs, no content filter, models swappable. After the one-time model download everything runs locally.
 
+[![Your app | AlternativeTo](https://alternativeto.net/static/badges/badge-compact-dark.svg)](https://alternativeto.net/software/your-app/about/?utm_source=badge&utm_medium=referral)
 ## Quick start
 
 ```bash
