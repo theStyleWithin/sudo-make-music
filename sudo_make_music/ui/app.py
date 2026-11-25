@@ -23,55 +23,186 @@ from ..player import AudioPlayer, PlayerError
 
 KV = r"""
 #:import dp kivy.metrics.dp
+#:import NoTransition kivy.uix.screenmanager.NoTransition
+#:set C_BG (0.055, 0.059, 0.075, 1)
+#:set C_RAIL (0.039, 0.043, 0.055, 1)
+#:set C_PANEL (0.086, 0.094, 0.122, 1)
+#:set C_LINE (0.15, 0.165, 0.21, 1)
+#:set C_TX (0.91, 0.915, 0.93, 1)
+#:set C_MUT (0.54, 0.56, 0.63, 1)
+#:set C_ACC (0.486, 0.608, 1, 1)
 <Label>:
-    color: 0.91, 0.91, 0.93, 1
+    color: C_TX
 <Field@TextInput>:
     multiline: False
     size_hint_y: None
-    height: dp(40)
-    background_color: 0.11, 0.12, 0.15, 1
-    foreground_color: 0.91, 0.91, 0.93, 1
-    cursor_color: 0.49, 0.61, 1, 1
-    padding: dp(10), dp(10)
+    height: dp(48)
+    background_normal: ''
+    background_active: ''
+    background_color: 0, 0, 0, 0
+    foreground_color: C_TX
+    hint_text_color: 0.4, 0.42, 0.5, 1
+    cursor_color: C_ACC
+    padding: dp(14), dp(14), dp(14), dp(14)
+    canvas.before:
+        Color:
+            rgba: C_ACC if self.focus else C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C_PANEL
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
+<Area@TextInput>:
+    background_normal: ''
+    background_active: ''
+    background_color: 0, 0, 0, 0
+    foreground_color: C_TX
+    hint_text_color: 0.4, 0.42, 0.5, 1
+    cursor_color: C_ACC
+    padding: dp(14), dp(14), dp(14), dp(14)
+    canvas.before:
+        Color:
+            rgba: C_ACC if self.focus else C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C_PANEL
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
 <Cap@Label>:
     size_hint_y: None
     height: dp(20)
     font_size: '12sp'
-    color: 0.55, 0.57, 0.64, 1
+    color: C_MUT
     halign: 'left'
+    valign: 'middle'
     text_size: self.size
+<Group@BoxLayout>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: self.minimum_height
+    spacing: dp(8)
 <Btn@Button>:
     size_hint_y: None
-    height: dp(44)
+    height: dp(48)
     background_normal: ''
-    background_color: 0.17, 0.18, 0.23, 1
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    color: C_TX if not self.disabled else (0.4, 0.42, 0.5, 1)
+    canvas.before:
+        Color:
+            rgba: C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: (0.086, 0.094, 0.122, 1) if self.state == 'normal' else (0.16, 0.18, 0.25, 1)
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
 <Primary@Btn>:
-    background_color: 0.49, 0.61, 1, 1
-    color: 0, 0, 0, 1
+    color: (0.04, 0.05, 0.08, 1) if not self.disabled else (0.55, 0.58, 0.7, 1)
     bold: True
+    canvas.before:
+        Color:
+            rgba: (0.486, 0.608, 1, 1) if (not self.disabled and self.state == 'normal') else ((0.36, 0.46, 0.8, 1) if not self.disabled else (0.2, 0.24, 0.36, 1))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
 <Tog@ToggleButton>:
     size_hint_y: None
     height: dp(44)
     background_normal: ''
     background_down: ''
-    background_color: (0.49, 0.61, 1, 1) if self.state == 'down' else (0.17, 0.18, 0.23, 1)
-    color: (0, 0, 0, 1) if self.state == 'down' else (0.91, 0.91, 0.93, 1)
-<SongCard@BoxLayout>:
+    background_color: 0, 0, 0, 0
+    bold: self.state == 'down'
+    color: (0.04, 0.05, 0.08, 1) if self.state == 'down' else C_MUT
+    canvas.before:
+        Color:
+            rgba: C_ACC if self.state == 'down' else C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C_ACC if self.state == 'down' else C_BG
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
+<NavBtn@Button>:
+    size_hint_y: None
+    height: dp(48)
+    active: False
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.width - dp(24), self.height
+    padding_x: dp(14)
+    color: C_TX if self.active else C_MUT
+    bold: self.active
+    canvas.before:
+        Color:
+            rgba: C_PANEL if self.active else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C_ACC if self.active else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.x, self.y + dp(10)
+            size: dp(3), self.height - dp(20)
+            radius: [dp(2)]
+<Tile@BoxLayout>:
     orientation: 'vertical'
     size_hint_y: None
-    height: dp(330)
+    padding: dp(14)
+    spacing: dp(6)
+    canvas.before:
+        Color:
+            rgba: C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(14)]
+        Color:
+            rgba: C_PANEL
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(13)]
+<SongCard@ButtonBehavior+BoxLayout>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(292)
     padding: dp(10)
     spacing: dp(4)
     accent: 0.49, 0.61, 1, 1
+    selected: False
     canvas.before:
         Color:
-            rgba: 0.06, 0.06, 0.09, 1
+            rgba: C_ACC if self.selected else C_LINE
         RoundedRectangle:
-            pos: self.x - dp(1), self.y - dp(1)
-            size: self.width + dp(2), self.height + dp(2)
-            radius: [dp(16)]
+            pos: self.x - dp(2), self.y - dp(2)
+            size: self.width + dp(4), self.height + dp(4)
+            radius: [dp(17)]
         Color:
-            rgba: 0.13, 0.14, 0.19, 1
+            rgba: C_PANEL
         RoundedRectangle:
             pos: self.pos
             size: self.size
@@ -82,567 +213,731 @@ KV = r"""
             pos: self.x + dp(6), self.top - dp(74)
             size: self.width - dp(12), dp(68)
             radius: [dp(11), dp(11), dp(4), dp(4)]
+<Row@ButtonBehavior+BoxLayout>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(96)
+    padding: dp(14)
+    spacing: dp(4)
+    selected: False
+    canvas.before:
+        Color:
+            rgba: C_ACC if self.selected else C_LINE
+        RoundedRectangle:
+            pos: self.x - dp(1), self.y - dp(1)
+            size: self.width + dp(2), self.height + dp(2)
+            radius: [dp(15)]
+        Color:
+            rgba: C_PANEL
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(14)]
+<Banner@Label>:
+    markup: True
+    size_hint_y: None
+    height: self.texture_size[1] + dp(28)
+    text_size: self.width - dp(28), None
+    halign: 'left'
+    valign: 'middle'
+    canvas.before:
+        Color:
+            rgba: 0.486, 0.608, 1, 0.35
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: 0.1, 0.12, 0.19, 1
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
+<Section@Label>:
+    text_size: self.width, None
+    size_hint_y: None
+    height: dp(36)
+    font_size: '12sp'
+    bold: True
+    color: C_ACC
+    halign: 'left'
+    valign: 'bottom'
 <Chip@Label>:
     size_hint: None, None
     size: self.texture_size[0] + dp(12), dp(20)
     font_size: '11sp'
     canvas.before:
         Color:
-            rgba: 0.22, 0.24, 0.32, 1
+            rgba: 0.14, 0.155, 0.2, 1
         RoundedRectangle:
             pos: self.pos
             size: self.size
             radius: [dp(9)]
 <Pick@Spinner>:
     size_hint_y: None
-    height: dp(40)
+    height: dp(48)
     background_normal: ''
-    background_color: 0.17, 0.18, 0.23, 1
-
-<Root>:
-    orientation: 'vertical'
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    color: C_TX
     canvas.before:
         Color:
-            rgba: 0.08, 0.08, 0.10, 1
+            rgba: C_LINE
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C_PANEL
+        RoundedRectangle:
+            pos: self.x + dp(1), self.y + dp(1)
+            size: self.width - dp(2), self.height - dp(2)
+            radius: [dp(11)]
+<Slider>:
+    value_track: True
+    value_track_color: C_ACC
+    cursor_size: dp(22), dp(22)
+
+<Root>:
+    orientation: 'horizontal'
+    canvas.before:
+        Color:
+            rgba: C_BG
         Rectangle:
             pos: self.pos
             size: self.size
-    Label:
-        text: root.badge
-        size_hint_y: None
-        height: dp(32)
-        font_size: '12sp'
-        color: 0.55, 0.57, 0.64, 1
-        text_size: self.width - dp(16), None
-        halign: 'left'
-        valign: 'middle'
-    ScreenManager:
-        id: sm
-        Screen:
-            name: 'create'
-            ScrollView:
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: self.minimum_height
-                    padding: dp(12)
-                    spacing: dp(6)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Tog:
-                            id: tog_song
-                            text: 'Song'
-                            group: 'mode'
-                            state: 'down'
-                            allow_no_selection: False
-                            on_release: root.set_mode('song')
-                        Tog:
-                            id: tog_talk
-                            text: 'Talk'
-                            group: 'mode'
-                            allow_no_selection: False
-                            on_release: root.set_mode('talk')
-                    BoxLayout:
-                        id: song_box
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height if root.mode == 'song' else 0
-                        opacity: 1 if root.mode == 'song' else 0
-                        disabled: root.mode != 'song'
-                        spacing: dp(6)
-                        Cap:
-                            text: 'Style / genre / mood'
-                        Field:
-                            id: prompt
-                            hint_text: 'lo-fi hip hop, mellow, rainy night, piano'
-                        Cap:
-                            text: 'Lyrics (optional - empty = instrumental)'
-                        TextInput:
-                            id: lyrics
-                            size_hint_y: None
-                            height: dp(110)
-                            hint_text: '[verse]\n...'
-                            background_color: 0.11, 0.12, 0.15, 1
-                            foreground_color: 0.91, 0.91, 0.93, 1
-                        Cap:
-                            text: 'Type  sudo make music  and press Enter to generate'
-                        Field:
-                            id: magic
-                            hint_text: 'sudo make music'
-                            height: dp(34)
-                            font_size: '13sp'
-                            padding: dp(10), dp(7)
-                            write_tab: False
-                            text_validate_unfocus: False
-                            on_text_validate: root.command_entered(self)
-                        Cap:
-                            text: 'Duration: %d:%02d' % (dur.value // 60, dur.value % 60)
-                        Slider:
-                            id: dur
-                            min: 10
-                            max: root.max_duration
-                            value: 60
-                            step: 5
-                            size_hint_y: None
-                            height: dp(36)
-                        Cap:
-                            text: 'Music model backend'
-                        Pick:
-                            id: backend
-                            on_text: root.on_backend(self.text)
-                        Label:
-                            text: root.backend_note
-                            size_hint_y: None
-                            height: (self.texture_size[1] + dp(6)) if root.backend_note else 0
-                            opacity: 1 if root.backend_note else 0
-                            text_size: self.width, None
-                            halign: 'left'
-                            font_size: '12sp'
-                            color: 1, 0.8, 0.3, 1
-                    BoxLayout:
-                        id: talk_box
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height if root.mode == 'talk' else 0
-                        opacity: 1 if root.mode == 'talk' else 0
-                        disabled: root.mode != 'talk'
-                        spacing: dp(6)
-                        Cap:
-                            text: 'What should the voice say?'
-                        TextInput:
-                            id: talk_text
-                            size_hint_y: None
-                            height: dp(150)
-                            hint_text: 'Type or paste the text to speak...'
-                            background_color: 0.11, 0.12, 0.15, 1
-                            foreground_color: 0.91, 0.91, 0.93, 1
-                        Cap:
-                            text: 'Speed: %.2fx' % speed.value
-                        Slider:
-                            id: speed
-                            min: 0.6
-                            max: 1.5
-                            value: 1.0
-                            step: 0.05
-                            size_hint_y: None
-                            height: dp(36)
-                        Cap:
-                            text: 'Speech backend'
-                        Pick:
-                            id: sbackend
-                            on_text: root.on_sbackend(self.text)
-                    Cap:
-                        text: 'Voice (from your voice library)'
-                    Pick:
-                        id: voice
-                    Cap:
-                        text: 'Resource: ' + root.device_note
-                    Pick:
-                        id: resource
-                        values: ['Auto', 'GPU', 'CPU + system RAM']
-                        on_text: root.on_resource(self.text)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Primary:
-                            id: go
-                            text: 'Generate'
-                            disabled: root.busy
-                            on_release: root.generate()
-                        Btn:
-                            text: 'Cancel'
-                            disabled: not root.busy
-                            on_release: root.cancel()
-                    ProgressBar:
-                        max: 1
-                        value: root.progress
-                        size_hint_y: None
-                        height: dp(10)
-                    Label:
-                        text: root.message
-                        size_hint_y: None
-                        height: dp(44)
-                        text_size: self.width, None
-                        halign: 'left'
-                        valign: 'top'
-                        color: (1, 0.42, 0.42, 1) if root.is_error else (0.55, 0.57, 0.64, 1)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44) if root.result_id else 0
-                        opacity: 1 if root.result_id else 0
-                        spacing: dp(8)
-                        Btn:
-                            text: 'Stop' if root.playing else 'Play'
-                            on_release: root.toggle_play(root.result_id)
-                        Btn:
-                            text: 'Save WAV'
-                            on_release: root.save(root.result_id, 'wav')
-                        Btn:
-                            text: 'Save MP3'
-                            on_release: root.save(root.result_id, 'mp3')
-                        Btn:
-                            text: 'Re-voice'
-                            size_hint_x: 1 if root.result_kind in ('song', 'revoice') else 0
-                            opacity: 1 if root.result_kind in ('song', 'revoice') else 0
-                            disabled: root.result_kind not in ('song', 'revoice')
-                            on_release: root.revoice(root.result_id)
-                        Btn:
-                            text: 'Save voice'
-                            size_hint_x: 1 if root.result_kind == 'song' else 0
-                            opacity: 1 if root.result_kind == 'song' else 0
-                            disabled: root.result_kind != 'song'
-                            on_release: root.save_voice_dialog(root.result_id)
-        Screen:
-            name: 'voices'
-            ScrollView:
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: self.minimum_height
-                    padding: dp(12)
-                    spacing: dp(8)
-                    Cap:
-                        text: 'Voice library - kept separate from your songs. Only clone voices you have the right to use.'
-                        height: dp(36)
-                    Label:
-                        text: root.model_report
-                        markup: True
-                        size_hint_y: None
-                        height: self.texture_size[1] + dp(8)
-                        text_size: self.width, None
-                        halign: 'left'
-                        font_size: '12sp'
-                    Btn:
-                        text: 'Clone a voice from an audio file...'
-                        on_release: root.pick_voice_file()
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Pick:
-                            id: preset_pick
-                            size_hint_y: None
-                            height: dp(44)
-                        Btn:
-                            text: 'Add preset voice'
-                            on_release: root.add_preset()
-                    BoxLayout:
-                        id: voice_list
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height
-                        spacing: dp(8)
-        Screen:
-            name: 'store'
-            ScrollView:
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: self.minimum_height
-                    padding: dp(12)
-                    spacing: dp(8)
-                    Label:
-                        text: root.store_header
-                        markup: True
-                        size_hint_y: None
-                        height: self.texture_size[1] + dp(6)
-                        text_size: self.width, None
-                        halign: 'left'
-                        font_size: '12sp'
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Primary:
-                            text: 'Refresh list (online)'
-                            on_release: root.refresh_store_list()
-                        Pick:
-                            id: store_filter
-                            values: ['All', 'Music', 'Talk voice', 'Singing voice cloning', 'Vocal separation']
-                            text: 'All'
-                            size_hint_y: None
-                            height: dp(44)
-                            on_text: root.refresh_store()
-                    Label:
-                        text: root.install_status
-                        size_hint_y: None
-                        height: dp(22) if root.install_status else 0
-                        opacity: 1 if root.install_status else 0
-                        text_size: self.width, None
-                        halign: 'left'
-                        font_size: '12sp'
-                    ProgressBar:
-                        max: 1
-                        value: root.install_progress
-                        size_hint_y: None
-                        height: dp(10) if root.install_status else 0
-                        opacity: 1 if root.install_status else 0
-                    BoxLayout:
-                        id: store_list
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height
-                        spacing: dp(10)
-                    Cap:
-                        text: 'Models installed on this computer'
-                    BoxLayout:
-                        id: installed_list
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height
-                        spacing: dp(8)
-                    Btn:
-                        text: 'Scan any folder for problems...'
-                        on_release: root.pick_scan_folder()
-        Screen:
-            name: 'library'
-            ScrollView:
-                BoxLayout:
-                    id: hist
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: self.minimum_height
-                    padding: dp(12)
-                    spacing: dp(8)
-        Screen:
-            name: 'settings'
-            ScrollView:
-                BoxLayout:
-                    orientation: 'vertical'
-                    size_hint_y: None
-                    height: self.minimum_height
-                    padding: dp(12)
-                    spacing: dp(6)
-                    Cap:
-                        text: 'Memory mode'
-                    Pick:
-                        id: s_mode
-                        values: ['auto', 'safe', 'balanced', 'quality']
-                    Cap:
-                        text: 'Seed (blank = random)'
-                    Field:
-                        id: s_seed
-                        input_filter: 'int'
-                    Cap:
-                        text: 'Steps'
-                    Field:
-                        id: s_steps
-                        input_filter: 'int'
-                    Cap:
-                        text: 'Max duration (s, blank = mode default)'
-                    Field:
-                        id: s_max
-                        input_filter: 'int'
-                    Cap:
-                        text: 'Chunk length (s, blank = mode default)'
-                    Field:
-                        id: s_chunk
-                        input_filter: 'int'
-                    Cap:
-                        text: 'Crossfade (s, blank = mode default)'
-                    Field:
-                        id: s_ov
-                        input_filter: 'float'
-                    Cap:
-                        text: 'CPU offload'
-                    Pick:
-                        id: s_off
-                        values: ['mode default', 'on', 'off']
-                    Cap:
-                        text: 'INT8 quantization'
-                    Pick:
-                        id: s_q
-                        values: ['mode default', 'on', 'off']
-                    Cap:
-                        text: 'Compute device (auto = GPU if it has VRAM, else CPU + system RAM; restart after changing)'
-                        height: dp(36)
-                    Pick:
-                        id: s_dev
-                        values: ['auto', 'gpu', 'cpu']
-                    Cap:
-                        text: 'Unload model when idle (s, 0 = never)'
-                    Field:
-                        id: s_idle
-                        input_filter: 'int'
-                    Cap:
-                        text: 'Speech backend (talk mode)'
-                    Pick:
-                        id: s_speech
-                    Cap:
-                        text: 'Singing voice-cloning model backend (re-voice)'
-                    Pick:
-                        id: s_conv
-                    Cap:
-                        text: 'Vocal-separation backend (re-voice)'
-                    Pick:
-                        id: s_sep
-                    Cap:
-                        text: 'Local models (stored on this device, used offline)'
-                    Pick:
-                        id: s_model
-                        on_text: root.on_model(self.text)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Pick:
-                            id: s_imp
-                            values: ['as music model', 'as talk-voice model', 'as singing-clone model', 'as vocal-separation model']
-                            text: 'as music model'
-                            size_hint_y: None
-                            height: dp(44)
-                        Btn:
-                            text: 'Import folder...'
-                            on_release: root.pick_folder()
-                        Btn:
-                            text: 'Delete selected'
-                            on_release: root.delete_model()
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(40)
-                        Cap:
-                            text: 'Offline mode: block all network access'
-                            height: dp(40)
-                        Switch:
-                            id: s_offline
-                            size_hint_x: None
-                            width: dp(90)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(40)
-                        Cap:
-                            text: 'Hardware warning popup before switching resource'
-                            height: dp(40)
-                        Switch:
-                            id: s_warn
-                            size_hint_x: None
-                            width: dp(90)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(40)
-                        Cap:
-                            text: 'Run my antivirus on new model downloads'
-                            height: dp(40)
-                        Switch:
-                            id: s_avscan
-                            size_hint_x: None
-                            width: dp(90)
-                    Cap:
-                        text: 'VirusTotal API key (optional, only used to look up file fingerprints; stored unencrypted on this computer)'
-                        height: dp(36)
-                    Field:
-                        id: s_vt
-                        password: True
-                    Cap:
-                        text: 'Model list address (blank = project default)'
-                    Field:
-                        id: s_cat
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(56)
-                        Cap:
-                            text: 'Continue each chunk from the previous one (experimental; helps long songs hang together)'
-                            height: dp(56)
-                            valign: 'middle'
-                        Switch:
-                            id: s_cont
-                            size_hint_x: None
-                            width: dp(90)
-                    Cap:
-                        text: root.effective
-                        height: dp(36)
-                    BoxLayout:
-                        size_hint_y: None
-                        height: dp(44)
-                        spacing: dp(8)
-                        Primary:
-                            text: 'Save settings'
-                            on_release: root.save_settings()
-                        Btn:
-                            text: 'Unload model now'
-                            on_release: root.unload()
-                    BoxLayout:
-                        id: install_box
-                        orientation: 'vertical'
-                        size_hint_y: None
-                        height: self.minimum_height
-                        spacing: dp(6)
-                        Cap:
-                            text: 'AI backend install (desktop, one-time download, needs internet)'
-                        Pick:
-                            id: s_cuda
-                            values: ['cu126', 'cu124', 'cu121', 'cpu']
-                            text: 'cu126'
-                        Btn:
-                            text: 'Install PyTorch + ACE-Step'
-                            on_release: root.install_backend(s_cuda.text)
-                        Btn:
-                            text: 'Install voice libraries (Kokoro, Chatterbox)'
-                            on_release: root.install_backend(s_cuda.text, True)
-                        Btn:
-                            text: 'Install singing-clone libraries (Demucs, OpenVoice)'
-                            on_release: root.install_backend(s_cuda.text, False, True)
-                        Label:
-                            text: root.install_log
-                            size_hint_y: None
-                            height: dp(120)
-                            font_size: '11sp'
-                            text_size: self.size
-                            halign: 'left'
-                            valign: 'top'
-                            color: 0.55, 0.57, 0.64, 1
     BoxLayout:
-        size_hint_y: None
-        height: dp(48) if root.now_title else 0
-        opacity: 1 if root.now_title else 0
-        disabled: not root.now_title
-        padding: dp(8), dp(4)
-        spacing: dp(10)
+        orientation: 'vertical'
+        size_hint_x: None
+        width: dp(184) if root.width > dp(760) else dp(112)
+        padding: dp(16)
+        spacing: dp(8)
         canvas.before:
             Color:
-                rgba: 0.09, 0.10, 0.14, 1
+                rgba: C_RAIL
             Rectangle:
                 pos: self.pos
                 size: self.size
+            Color:
+                rgba: C_LINE
+            Rectangle:
+                pos: self.right - dp(1), self.y
+                size: dp(1), self.height
         Label:
-            text: root.now_title
-            shorten: True
-            halign: 'left'
-            text_size: self.size
-            valign: 'middle'
-        ProgressBar:
-            max: 1
-            value: root.now_pos
-            size_hint_x: 0.5
-        Btn:
-            text: 'Stop'
-            size_hint_x: None
-            width: dp(90)
-            height: dp(40)
+            text: '[b]sudo make music[/b]\n[size=11sp][color=8a8fa0]offline  ·  local[/color][/size]'
+            markup: True
             size_hint_y: None
-            pos_hint: {'center_y': 0.5}
-            on_release: root.stop_audio()
-    BoxLayout:
-        size_hint_y: None
-        height: dp(48)
-        Btn:
+            height: dp(64)
+            halign: 'left'
+            valign: 'top'
+            text_size: self.size
+            padding_x: dp(6)
+        NavBtn:
             text: 'Create'
+            active: root.page == 'create'
             on_release: root.show('create')
-        Btn:
+        NavBtn:
             text: 'Voices'
+            active: root.page == 'voices'
             on_release: root.show('voices')
-        Btn:
+        NavBtn:
             text: 'Library'
+            active: root.page == 'library'
             on_release: root.show('library')
-        Btn:
+        NavBtn:
             text: 'Models'
+            active: root.page == 'store'
             on_release: root.show('store')
-        Btn:
+        NavBtn:
             text: 'Settings'
+            active: root.page == 'settings'
             on_release: root.show('settings')
+        Widget:
+        Label:
+            text: root.badge
+            font_size: '11sp'
+            color: C_MUT
+            size_hint_y: None
+            height: dp(72)
+            halign: 'left'
+            valign: 'bottom'
+            text_size: self.size
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: root.page_head
+            markup: True
+            size_hint_y: None
+            height: dp(76)
+            halign: 'left'
+            valign: 'bottom'
+            text_size: self.width - dp(64), self.height - dp(10)
+        ScreenManager:
+            id: sm
+            transition: NoTransition()
+            Screen:
+                name: 'create'
+                ScrollView:
+                    bar_width: dp(4)
+                    BoxLayout:
+                        orientation: 'horizontal' if root.width > dp(1000) else 'vertical'
+                        size_hint_y: None
+                        height: (max(cleft.height, cright.height) if self.orientation == 'horizontal' else cleft.height + cright.height + self.spacing) + dp(32)
+                        padding: dp(32), dp(8), dp(32), dp(24)
+                        spacing: dp(32)
+                        BoxLayout:
+                            id: cleft
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+                            pos_hint: {'top': 1}
+                            spacing: dp(16)
+                            BoxLayout:
+                                size_hint_y: None
+                                height: dp(44)
+                                spacing: dp(8)
+                                Tog:
+                                    id: tog_song
+                                    text: 'Song'
+                                    group: 'mode'
+                                    state: 'down'
+                                    allow_no_selection: False
+                                    size_hint_x: None
+                                    width: dp(120)
+                                    on_release: root.set_mode('song')
+                                Tog:
+                                    id: tog_talk
+                                    text: 'Talk'
+                                    group: 'mode'
+                                    allow_no_selection: False
+                                    size_hint_x: None
+                                    width: dp(120)
+                                    on_release: root.set_mode('talk')
+                                Widget:
+                            BoxLayout:
+                                id: song_box
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: self.minimum_height if root.mode == 'song' else 0
+                                opacity: 1 if root.mode == 'song' else 0
+                                disabled: root.mode != 'song'
+                                spacing: dp(16)
+                                Group:
+                                    Cap:
+                                        text: 'STYLE  ·  genre, mood, instruments'
+                                    Field:
+                                        id: prompt
+                                        hint_text: 'lo-fi hip hop, mellow, rainy night, piano'
+                                Group:
+                                    Cap:
+                                        text: 'LYRICS  ·  optional, empty = instrumental'
+                                    Area:
+                                        id: lyrics
+                                        size_hint_y: None
+                                        height: dp(230)
+                                        hint_text: '[verse]\n...'
+                            BoxLayout:
+                                id: talk_box
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: self.minimum_height if root.mode == 'talk' else 0
+                                opacity: 1 if root.mode == 'talk' else 0
+                                disabled: root.mode != 'talk'
+                                spacing: dp(16)
+                                Group:
+                                    Cap:
+                                        text: 'WHAT SHOULD THE VOICE SAY?'
+                                    Area:
+                                        id: talk_text
+                                        size_hint_y: None
+                                        height: dp(230)
+                                        hint_text: 'Type or paste the text to speak...'
+                            ProgressBar:
+                                max: 1
+                                value: root.progress
+                                size_hint_y: None
+                                height: dp(8) if root.busy else 0
+                                opacity: 1 if root.busy else 0
+                            Label:
+                                text: root.message
+                                size_hint_y: None
+                                height: dp(44)
+                                text_size: self.width, None
+                                halign: 'left'
+                                valign: 'top'
+                                color: (1, 0.42, 0.42, 1) if root.is_error else C_MUT
+                            BoxLayout:
+                                size_hint_y: None
+                                height: dp(44) if root.result_id else 0
+                                opacity: 1 if root.result_id else 0
+                                disabled: not root.result_id
+                                spacing: dp(8)
+                                Btn:
+                                    text: 'Stop' if root.playing else 'Play'
+                                    on_release: root.toggle_play(root.result_id)
+                                Btn:
+                                    text: 'Save WAV'
+                                    on_release: root.save(root.result_id, 'wav')
+                                Btn:
+                                    text: 'Save MP3'
+                                    on_release: root.save(root.result_id, 'mp3')
+                                Btn:
+                                    text: 'Re-voice'
+                                    size_hint_x: 1 if root.result_kind in ('song', 'revoice') else 0
+                                    opacity: 1 if root.result_kind in ('song', 'revoice') else 0
+                                    disabled: root.result_kind not in ('song', 'revoice')
+                                    on_release: root.revoice(root.result_id)
+                                Btn:
+                                    text: 'Save voice'
+                                    size_hint_x: 1 if root.result_kind == 'song' else 0
+                                    opacity: 1 if root.result_kind == 'song' else 0
+                                    disabled: root.result_kind != 'song'
+                                    on_release: root.save_voice_dialog(root.result_id)
+                        BoxLayout:
+                            id: cright
+                            orientation: 'vertical'
+                            size_hint_x: None if root.width > dp(1000) else 1
+                            width: dp(340)
+                            size_hint_y: None
+                            height: self.minimum_height
+                            pos_hint: {'top': 1}
+                            spacing: dp(16)
+                            BoxLayout:
+                                id: song_side
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: self.minimum_height if root.mode == 'song' else 0
+                                opacity: 1 if root.mode == 'song' else 0
+                                disabled: root.mode != 'song'
+                                spacing: dp(16)
+                                Group:
+                                    Cap:
+                                        text: 'LENGTH  ·  %d:%02d' % (dur.value // 60, dur.value % 60)
+                                    Slider:
+                                        id: dur
+                                        min: 10
+                                        max: root.max_duration
+                                        value: 60
+                                        step: 5
+                                        size_hint_y: None
+                                        height: dp(40)
+                                Group:
+                                    Cap:
+                                        text: 'ENGINE'
+                                    Pick:
+                                        id: backend
+                                        on_text: root.on_backend(self.text)
+                                    Label:
+                                        text: root.backend_note
+                                        size_hint_y: None
+                                        height: (self.texture_size[1] + dp(6)) if root.backend_note else 0
+                                        opacity: 1 if root.backend_note else 0
+                                        text_size: self.width, None
+                                        halign: 'left'
+                                        font_size: '12sp'
+                                        color: 1, 0.8, 0.3, 1
+                            BoxLayout:
+                                id: talk_side
+                                orientation: 'vertical'
+                                size_hint_y: None
+                                height: self.minimum_height if root.mode == 'talk' else 0
+                                opacity: 1 if root.mode == 'talk' else 0
+                                disabled: root.mode != 'talk'
+                                spacing: dp(16)
+                                Group:
+                                    Cap:
+                                        text: 'SPEED  ·  %.2fx' % speed.value
+                                    Slider:
+                                        id: speed
+                                        min: 0.6
+                                        max: 1.5
+                                        value: 1.0
+                                        step: 0.05
+                                        size_hint_y: None
+                                        height: dp(40)
+                                Group:
+                                    Cap:
+                                        text: 'SPEECH ENGINE'
+                                    Pick:
+                                        id: sbackend
+                                        on_text: root.on_sbackend(self.text)
+                            Group:
+                                Cap:
+                                    text: 'VOICE  ·  from your voice library'
+                                Pick:
+                                    id: voice
+                            Group:
+                                height: self.minimum_height if root.mode == 'song' else 0
+                                opacity: 1 if root.mode == 'song' else 0
+                                disabled: root.mode != 'song'
+                                Cap:
+                                    text: 'TYPE  sudo make music  AND PRESS ENTER'
+                                Field:
+                                    id: magic
+                                    hint_text: 'sudo make music'
+                                    write_tab: False
+                                    text_validate_unfocus: False
+                                    on_text_validate: root.command_entered(self)
+                            Btn:
+                                text: 'More options  ' + ('v' if root.more else '>')
+                                color: C_MUT
+                                on_release: root.more = not root.more
+                            Group:
+                                height: self.minimum_height if root.more else 0
+                                opacity: 1 if root.more else 0
+                                disabled: not root.more
+                                Cap:
+                                    text: 'RESOURCE  ·  ' + root.device_note
+                                Pick:
+                                    id: resource
+                                    values: ['Auto', 'GPU', 'CPU + system RAM']
+                                    on_text: root.on_resource(self.text)
+            Screen:
+                name: 'voices'
+                ScrollView:
+                    bar_width: dp(4)
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        padding: dp(32), dp(8), dp(32), dp(24)
+                        spacing: dp(16)
+                        Cap:
+                            text: 'Voices are kept separate from your songs. Only clone voices you have the right to use.'
+                            height: dp(24)
+                        Label:
+                            text: root.model_report
+                            markup: True
+                            size_hint_y: None
+                            height: self.texture_size[1] + dp(8)
+                            text_size: self.width, None
+                            halign: 'left'
+                            font_size: '12sp'
+                        Group:
+                            Cap:
+                                text: 'PRESET VOICE  ·  choose one, then press Add preset voice below'
+                            Pick:
+                                id: preset_pick
+                        GridLayout:
+                            id: voice_list
+                            cols: max(1, int((self.width + dp(16)) // dp(270)))
+                            size_hint_y: None
+                            height: self.minimum_height
+                            spacing: dp(16)
+            Screen:
+                name: 'store'
+                ScrollView:
+                    bar_width: dp(4)
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        padding: dp(32), dp(8), dp(32), dp(24)
+                        spacing: dp(12)
+                        Banner:
+                            text: root.store_header
+                        Group:
+                            Cap:
+                                text: 'SHOW'
+                            Pick:
+                                id: store_filter
+                                values: ['All', 'Music', 'Talk voice', 'Singing voice cloning', 'Vocal separation']
+                                text: 'All'
+                                on_text: root.refresh_store()
+                        Label:
+                            text: root.install_status
+                            size_hint_y: None
+                            height: dp(22) if root.install_status else 0
+                            opacity: 1 if root.install_status else 0
+                            text_size: self.width, None
+                            halign: 'left'
+                            font_size: '12sp'
+                        ProgressBar:
+                            max: 1
+                            value: root.install_progress
+                            size_hint_y: None
+                            height: dp(10) if root.install_status else 0
+                            opacity: 1 if root.install_status else 0
+                        BoxLayout:
+                            id: store_list
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+                            spacing: dp(10)
+                        Cap:
+                            text: 'Models installed on this computer'
+                        BoxLayout:
+                            id: installed_list
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+                            spacing: dp(8)
+            Screen:
+                name: 'library'
+                ScrollView:
+                    bar_width: dp(4)
+                    BoxLayout:
+                        id: hist
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        padding: dp(32), dp(8), dp(32), dp(24)
+                        spacing: dp(16)
+            Screen:
+                name: 'settings'
+                ScrollView:
+                    bar_width: dp(4)
+                    BoxLayout:
+                        orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
+                        padding: max(dp(32), (root.width - dp(184) - dp(760)) / 2), dp(8), max(dp(32), (root.width - dp(184) - dp(760)) / 2), dp(24)
+                        spacing: dp(8)
+                        Section:
+                            text: 'MEMORY AND SPEED'
+                        Cap:
+                            text: 'Memory mode'
+                        Pick:
+                            id: s_mode
+                            values: ['auto', 'safe', 'balanced', 'quality']
+                        Cap:
+                            text: 'Seed (blank = random)'
+                        Field:
+                            id: s_seed
+                            input_filter: 'int'
+                        Cap:
+                            text: 'Steps'
+                        Field:
+                            id: s_steps
+                            input_filter: 'int'
+                        Cap:
+                            text: 'Max duration (s, blank = mode default)'
+                        Field:
+                            id: s_max
+                            input_filter: 'int'
+                        Cap:
+                            text: 'Chunk length (s, blank = mode default)'
+                        Field:
+                            id: s_chunk
+                            input_filter: 'int'
+                        Cap:
+                            text: 'Crossfade (s, blank = mode default)'
+                        Field:
+                            id: s_ov
+                            input_filter: 'float'
+                        Cap:
+                            text: 'CPU offload'
+                        Pick:
+                            id: s_off
+                            values: ['mode default', 'on', 'off']
+                        Cap:
+                            text: 'INT8 quantization'
+                        Pick:
+                            id: s_q
+                            values: ['mode default', 'on', 'off']
+                        Cap:
+                            text: 'Compute device (auto = GPU if it has VRAM, else CPU + system RAM; restart after changing)'
+                            height: dp(36)
+                        Pick:
+                            id: s_dev
+                            values: ['auto', 'gpu', 'cpu']
+                        Cap:
+                            text: 'Unload model when idle (s, 0 = never)'
+                        Field:
+                            id: s_idle
+                            input_filter: 'int'
+                        Section:
+                            text: 'ENGINES'
+                        Cap:
+                            text: 'Speech backend (talk mode)'
+                        Pick:
+                            id: s_speech
+                        Cap:
+                            text: 'Singing voice-cloning model backend (re-voice)'
+                        Pick:
+                            id: s_conv
+                        Cap:
+                            text: 'Vocal-separation backend (re-voice)'
+                        Pick:
+                            id: s_sep
+                        Section:
+                            text: 'MODELS ON THIS COMPUTER'
+                        Cap:
+                            text: 'Local models (stored on this device, used offline)'
+                        Pick:
+                            id: s_model
+                            on_text: root.on_model(self.text)
+                        BoxLayout:
+                            size_hint_y: None
+                            height: dp(44)
+                            spacing: dp(8)
+                            Pick:
+                                id: s_imp
+                                values: ['as music model', 'as talk-voice model', 'as singing-clone model', 'as vocal-separation model']
+                                text: 'as music model'
+                                size_hint_y: None
+                                height: dp(44)
+                            Btn:
+                                text: 'Import folder...'
+                                on_release: root.pick_folder()
+                            Btn:
+                                text: 'Delete selected'
+                                on_release: root.delete_model()
+                        Section:
+                            text: 'PRIVACY AND SAFETY'
+                        BoxLayout:
+                            size_hint_y: None
+                            height: dp(40)
+                            Cap:
+                                text: 'Offline mode: block all network access'
+                                height: dp(40)
+                            Switch:
+                                id: s_offline
+                                size_hint_x: None
+                                width: dp(90)
+                        BoxLayout:
+                            size_hint_y: None
+                            height: dp(40)
+                            Cap:
+                                text: 'Hardware warning popup before switching resource'
+                                height: dp(40)
+                            Switch:
+                                id: s_warn
+                                size_hint_x: None
+                                width: dp(90)
+                        BoxLayout:
+                            size_hint_y: None
+                            height: dp(40)
+                            Cap:
+                                text: 'Run my antivirus on new model downloads'
+                                height: dp(40)
+                            Switch:
+                                id: s_avscan
+                                size_hint_x: None
+                                width: dp(90)
+                        Cap:
+                            text: 'VirusTotal API key (optional, only used to look up file fingerprints; stored unencrypted on this computer)'
+                            height: dp(36)
+                        Field:
+                            id: s_vt
+                            password: True
+                        Cap:
+                            text: 'Model list address (blank = project default)'
+                        Field:
+                            id: s_cat
+                        BoxLayout:
+                            size_hint_y: None
+                            height: dp(56)
+                            Cap:
+                                text: 'Continue each chunk from the previous one (experimental; helps long songs hang together)'
+                                height: dp(56)
+                                valign: 'middle'
+                            Switch:
+                                id: s_cont
+                                size_hint_x: None
+                                width: dp(90)
+                        Cap:
+                            text: root.effective
+                            height: dp(36)
+                        BoxLayout:
+                            id: install_box
+                            orientation: 'vertical'
+                            size_hint_y: None
+                            height: self.minimum_height
+                            spacing: dp(6)
+                            Section:
+                                text: 'AI BACKEND INSTALL'
+                            Cap:
+                                text: 'AI backend install (desktop, one-time download, needs internet)'
+                            Pick:
+                                id: s_cuda
+                                values: ['cu126', 'cu124', 'cu121', 'cpu']
+                                text: 'cu126'
+                            Btn:
+                                text: 'Install PyTorch + ACE-Step'
+                                on_release: root.install_backend(s_cuda.text)
+                            Btn:
+                                text: 'Install voice libraries (Kokoro, Chatterbox)'
+                                on_release: root.install_backend(s_cuda.text, True)
+                            Btn:
+                                text: 'Install singing-clone libraries (Demucs, OpenVoice)'
+                                on_release: root.install_backend(s_cuda.text, False, True)
+                            Label:
+                                text: root.install_log
+                                size_hint_y: None
+                                height: dp(120)
+                                font_size: '11sp'
+                                text_size: self.size
+                                halign: 'left'
+                                valign: 'top'
+                                color: 0.55, 0.57, 0.64, 1
+        BoxLayout:
+            size_hint_y: None
+            height: dp(52) if root.now_title else 0
+            opacity: 1 if root.now_title else 0
+            disabled: not root.now_title
+            padding: dp(32), dp(6)
+            spacing: dp(12)
+            canvas.before:
+                Color:
+                    rgba: C_PANEL
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            Label:
+                text: root.now_title
+                shorten: True
+                halign: 'left'
+                text_size: self.size
+                valign: 'middle'
+            ProgressBar:
+                max: 1
+                value: root.now_pos
+                size_hint_x: 0.5
+            Btn:
+                text: 'Stop'
+                size_hint: None, None
+                size: dp(90), dp(40)
+                pos_hint: {'center_y': 0.5}
+                on_release: root.stop_audio()
+        BoxLayout:
+            size_hint_y: None
+            height: dp(80)
+            padding: dp(32), dp(14)
+            spacing: dp(16)
+            canvas.before:
+                Color:
+                    rgba: C_RAIL
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+                Color:
+                    rgba: C_LINE
+                Rectangle:
+                    pos: self.x, self.top - dp(1)
+                    size: self.width, dp(1)
+            Label:
+                text: root.bar_status
+                markup: True
+                color: C_MUT
+                halign: 'left'
+                valign: 'middle'
+                text_size: self.size
+                shorten: True
+            Btn:
+                text: root.act_ghost
+                size_hint: None, 1
+                width: max(dp(130), self.texture_size[0] + dp(48))
+                opacity: 1 if root.act_ghost else 0
+                disabled: root.act_ghost_off or not root.act_ghost
+                on_release: root.do_ghost()
+            Primary:
+                text: root.act_primary
+                size_hint: None, 1
+                width: max(dp(200), self.texture_size[0] + dp(64))
+                font_size: '16sp'
+                disabled: root.act_primary_off
+                on_release: root.do_primary()
 """
 
 
@@ -653,6 +948,14 @@ class Root(BoxLayout):
     progress = NumericProperty(0)
     busy = BooleanProperty(False)
     playing = BooleanProperty(False)
+    page = StringProperty("create")
+    page_head = StringProperty("")
+    more = BooleanProperty(False)               # "More options" fold on Create
+    act_ghost = StringProperty("")              # the two buttons in the bottom-right action bar
+    act_primary = StringProperty("")
+    act_ghost_off = BooleanProperty(False)
+    act_primary_off = BooleanProperty(False)
+    bar_status = StringProperty("")
     now_title = StringProperty("")          # the now-playing bar (every screen)
     now_pos = NumericProperty(0)
     result_id = StringProperty("")
@@ -676,6 +979,10 @@ class Root(BoxLayout):
         self.job = None
         self.player = AudioPlayer()
         self._autoplay = None            # job id of a card being rendered to play at once
+        self.sel_card = self.sel_song = ""
+        self.page_head = self.HEADS["create"]
+        from kivy.core.window import Window
+        Window.bind(on_resize=lambda *_: Clock.schedule_once(lambda dt: self._relayout(), 0.25))
         Clock.schedule_once(lambda dt: self._init_ui(), 0)
         Clock.schedule_interval(self._tick, 0.5)
 
@@ -854,6 +1161,7 @@ class Root(BoxLayout):
 
     def refresh_voices(self):
         from kivy.factory import Factory
+        from kivy.uix.gridlayout import GridLayout
         from kivy.uix.label import Label
         voices = self.engine.voices.list()
         prev = self.selected_voice_id()
@@ -887,18 +1195,18 @@ class Root(BoxLayout):
             box.add_widget(Label(text="No saved voices yet. Save one after a song, or clone one from an audio file.",
                                  size_hint_y=None, height=dp(60), text_size=(dp(300), None)))
         for v in voices:
-            card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(100), spacing=dp(4))
-            title = Label(text=v.name, size_hint_y=None, height=dp(24), halign="left", shorten=True, bold=True)
+            card = Factory.Tile(height=dp(160))
+            title = Label(text=v.name, size_hint_y=None, height=dp(24), halign="left", shorten=True, bold=True, font_size="15sp")
             title.bind(size=lambda w, sz: setattr(w, "text_size", sz))
             how = {"song": "from a song", "upload": "cloned from audio", "preset": "preset"}[v.source]
             meta = Label(text=" · ".join(x for x in (how, v.tags, f"{v.ref_seconds:.0f}s reference" if v.has_ref else "") if x),
                          size_hint_y=None, height=dp(20), font_size="12sp", color=(0.55, 0.57, 0.64, 1),
                          halign="left", shorten=True)
             meta.bind(size=lambda w, sz: setattr(w, "text_size", sz))
-            btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(6))
+            btns = GridLayout(cols=2, size_hint_y=None, height=dp(88), spacing=dp(6))
 
             def add(text, cb, enabled=True):
-                b = Factory.Btn(text=text, disabled=not enabled)
+                b = Factory.Btn(text=text, disabled=not enabled, height=dp(40))
                 b.bind(on_release=lambda *_: cb())
                 btns.add_widget(b)
             add("Hear", lambda i=v.id: self.play_file(self.engine.voices.ref_path(i)), v.has_ref)
@@ -1040,7 +1348,7 @@ class Root(BoxLayout):
         box.clear_widgets()
         busy = bool(e.install_task and e.install_task.status == "running")
         if role in (None, "music"):
-            card = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(3))
+            card = Factory.Tile(spacing=dp(3))
             using = e.store.value.backend == "procedural"
             txt = ("[b]Procedural music (no AI)[/b]  [color=e8c04a]BETA[/color]  [color=5fd38d]Built in: nothing to download[/color]\n"
                    "Builds songs from rules: style words pick tempo, scale, chords and instruments; your lyrics shape the structure and a "
@@ -1048,19 +1356,19 @@ class Root(BoxLayout):
                    "track, not a band, and its voice does not pronounce real words.")
             lab = Label(text=txt, markup=True, size_hint_y=None, halign="left", valign="top")
             lab.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
-            lab.bind(texture_size=lambda w, sz, card=card: (setattr(w, "height", sz[1] + dp(4)), setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(6))))
+            lab.bind(texture_size=lambda w, sz, card=card: (setattr(w, "height", sz[1] + dp(4)), setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(36))))
             card.add_widget(lab)
             btns = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
             b = (Factory.Btn if using else Factory.Primary)(text="In use for music" if using else "Use for music", disabled=using)
             b.bind(on_release=lambda *_: self.use_backend("procedural"))
             btns.add_widget(b)
             card.add_widget(btns)
-            card.height = dp(190)
+            card.height = dp(220)
             box.add_widget(card)
         for r in e.catalog_rows():
             if role and r["role"] != role:
                 continue
-            card = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(3))
+            card = Factory.Tile(spacing=dp(3))
             tags = ("  [color=e8c04a]* Best for your PC[/color]" if r["best"] else "") + \
                    ("  [color=7c9cff]Lightweight[/color]" if r["lightest"] else "")
             lines = [f"[b]{r['name']}[/b]{tags}",
@@ -1077,7 +1385,7 @@ class Root(BoxLayout):
             lab = Label(text="\n".join(lines), markup=True, size_hint_y=None, halign="left", valign="top")
             lab.bind(width=lambda w, v: setattr(w, "text_size", (v, None)))
             lab.bind(texture_size=lambda w, sz, card=card: (setattr(w, "height", sz[1] + dp(4)),
-                                                           setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(6))))
+                                                           setattr(card, "height", sz[1] + dp(4) + dp(42) + dp(36))))
             card.add_widget(lab)
             btns = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
 
@@ -1093,7 +1401,7 @@ class Root(BoxLayout):
                 add("Download", lambda i=r["id"]: self.download(i), not busy and r["fit"] != "no", True)
                 add("Model page", lambda u=r["homepage"]: self.open_link(u), bool(r["homepage"]))
             card.add_widget(btns)
-            card.height = dp(180)
+            card.height = dp(210)
             box.add_widget(card)
         inst = self.ids.installed_list
         inst.clear_widgets()
@@ -1287,14 +1595,86 @@ class Root(BoxLayout):
         self.engine.unload_all()
         self.refresh_status()
 
+    HEADS = {
+        "create": "[size=24sp][b]Create[/b][/size]   [color=8a8fa0]Describe the song, then press Generate.[/color]",
+        "voices": "[size=24sp][b]Voices[/b][/size]   [color=8a8fa0]Saved voices you can reuse in any song.[/color]",
+        "library": "[size=24sp][b]Library[/b][/size]   [color=8a8fa0]Every song and song card, in one place.[/color]",
+        "store": "[size=24sp][b]Models[/b][/size]   [color=8a8fa0]Pick what makes your music. We checked your PC.[/color]",
+        "settings": "[size=24sp][b]Settings[/b][/size]   [color=8a8fa0]Everything has a sensible default.[/color]",
+    }
+
     def show(self, name):
         self.ids.sm.current = name
+        self.page, self.page_head = name, self.HEADS.get(name, "")
         if name == "library":
             self.refresh_library()
         if name == "voices":
             self.refresh_voices()
         if name == "store":
             self.refresh_store()
+        self._sync_actions()
+
+    def _relayout(self):
+        if self.page == "library":
+            self.refresh_library()
+
+    def _sync_actions(self):
+        """The bottom-right buttons change with the page: the main thing you do here is always in the same corner."""
+        pg, busy = self.page, self.busy
+        g, gc, pr, pc = "", False, "", False
+        if pg == "create":
+            g, gc, pr, pc = "Cancel", not busy, "Generate" if self.mode == "song" else "Speak", busy
+        elif pg == "voices":
+            g, pr = "Add preset voice", "Clone a voice..."
+        elif pg == "library":
+            if self.lib_mode == "cards":
+                g, pr, pc = "Import card", "Play", not self.sel_card
+            else:
+                g, gc = "Delete", not self.sel_song
+                pr, pc = ("Stop" if self.playing else "Play"), not self.sel_song
+        elif pg == "store":
+            g, pr = "Scan a folder...", "Refresh list"
+        elif pg == "settings":
+            g, pr = "Unload model now", "Save settings"
+        self.act_ghost, self.act_ghost_off, self.act_primary, self.act_primary_off = g, gc, pr, pc
+        j = self.job
+        if busy and j is not None:
+            self.bar_status = f"[color=e8c04a]Working[/color]  -  {j.status} - {j.message}"
+        else:
+            self.bar_status = "[color=58d68d]Ready[/color]"
+
+    def do_ghost(self):
+        pg = self.page
+        if pg == "create":
+            self.cancel()
+        elif pg == "voices":
+            self.add_preset()
+        elif pg == "library":
+            if self.lib_mode == "cards":
+                self.pick_card_file()
+            elif self.sel_song:
+                self.delete(self.sel_song)
+        elif pg == "store":
+            self.pick_scan_folder()
+        elif pg == "settings":
+            self.unload()
+
+    def do_primary(self):
+        pg = self.page
+        if pg == "create":
+            self.generate()
+        elif pg == "voices":
+            self.pick_voice_file()
+        elif pg == "library":
+            if self.lib_mode == "cards":
+                if self.sel_card:
+                    self.render_card(self.sel_card, play=True)
+            elif self.sel_song:
+                self.toggle_play(self.sel_song)
+        elif pg == "store":
+            self.refresh_store_list()
+        elif pg == "settings":
+            self.save_settings()
 
     def _say(self, msg, err=False):
         self.message, self.is_error = msg, err
@@ -1352,6 +1732,7 @@ class Root(BoxLayout):
 
     def _tick(self, dt):
         self._poll_install()
+        self._sync_actions()
         if self.install_log or self.installer.running:
             snap = self.installer.snapshot()
             self.install_log = "\n".join(snap["log"][-8:]) + ("\nDONE - restart the app." if snap["ok"] else "")
@@ -1444,75 +1825,136 @@ class Root(BoxLayout):
 
     # ---- library ---------------------------------------------------------
     def refresh_library(self):
+        from kivy.factory import Factory
+        from kivy.uix.gridlayout import GridLayout
         box = self.ids.hist
         box.clear_widgets()
-        from kivy.uix.label import Label
-        from kivy.factory import Factory
         sw = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
-        for label, mode in (("Songs", "songs"), ("Cards", "cards")):
-            t = Factory.Tog(text=label, group="libmode", allow_no_selection=False, state="down" if self.lib_mode == mode else "normal")
+        for label, mode in (("Cards", "cards"), ("Songs", "songs")):
+            t = Factory.Tog(text=label, group="libmode", allow_no_selection=False, size_hint_x=None, width=dp(120),
+                            state="down" if self.lib_mode == mode else "normal")
             t.bind(on_release=lambda *_a, m=mode: self.set_lib_mode(m))
             sw.add_widget(t)
+        sw.add_widget(BoxLayout())
         box.add_widget(sw)
+        from kivy.core.window import Window
+        two = Window.width > dp(1000)
+        outer = BoxLayout(orientation="horizontal" if two else "vertical", size_hint_y=None, spacing=dp(32))
+        outer.bind(minimum_height=lambda *_: None)
+        left_w = (Window.width - dp(184 + 340 + 96 + 32)) if two else (Window.width - dp(184 + 64))
+        gcols = max(1, int(left_w // dp(240)))
+        grid = GridLayout(cols=gcols, spacing=dp(16), size_hint_y=None)
+        grid.bind(minimum_height=grid.setter("height"))
+        grid.pos_hint = {"top": 1}
+        side = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(12), pos_hint={"top": 1})
+        if two:
+            side.size_hint_x, side.width = None, dp(340)
+        side.bind(minimum_height=side.setter("height"))
         if self.lib_mode == "cards":
-            return self._cards_view(box)
+            self._cards_view(grid, side)
+        else:
+            self._songs_view(grid, side)
+        outer.add_widget(grid)
+        outer.add_widget(side)
+
+        def fit(*_):
+            outer.height = max(grid.height, side.height) if two else grid.height + side.height + outer.spacing
+        grid.bind(height=fit)
+        side.bind(height=fit)
+        box.add_widget(outer)
+        fit()
+        self._sync_actions()
+
+    def _panel_text(self, side, head, title, meta):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
+        side.add_widget(Factory.Cap(text=head))
+        t = Factory.Tile(height=dp(86))
+        for text, kw in ((title, dict(bold=True, font_size="15sp")), (meta, dict(font_size="12sp", color=(0.54, 0.56, 0.63, 1)))):
+            w = Label(text=text, size_hint_y=None, height=dp(24), halign="left", shorten=True, **kw)
+            w.bind(size=lambda x, sz: setattr(x, "text_size", sz))
+            t.add_widget(w)
+        side.add_widget(t)
+
+    def _panel_actions(self, side, head, actions):
+        from kivy.factory import Factory
+        side.add_widget(Factory.Cap(text=head))
+        for text, cb, ok in actions:
+            b = Factory.Btn(text=text + "   >", disabled=not ok, halign="left", valign="middle")
+            b.bind(on_release=lambda *_a, cb=cb: cb())
+            b.bind(size=lambda x, sz: setattr(x, "text_size", (sz[0] - dp(28), sz[1])))
+            side.add_widget(b)
+
+    def _songs_view(self, grid, side):
+        from kivy.factory import Factory
+        from kivy.uix.label import Label
         rows = self.engine.history.list()
         if not rows:
-            box.add_widget(Label(text="Nothing yet.", size_hint_y=None, height=dp(40)))
+            grid.add_widget(Label(text="Nothing yet. Songs you make appear here.", size_hint_y=None, height=dp(60), color=(0.54, 0.56, 0.63, 1)))
+            return
+        if self.sel_song not in {r["id"] for r in rows}:
+            self.sel_song = rows[0]["id"]
+        chosen = None
         for r in rows:
-            card = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(96), spacing=dp(4))
+            sel = r["id"] == self.sel_song
+            if sel:
+                chosen = r
+            tile = Factory.Row()
+            tile.selected = sel
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["created"]))
-            title = Label(text=r["prompt"], size_hint_y=None, height=dp(24), halign="left", shorten=True)
-            title.bind(size=lambda w, s: setattr(w, "text_size", s))
             talk = (r.get("kind") or "song") == "talk"
-            kindtxt = "talk" if talk else f"{r['duration']:.0f}s · {r['mode']}"
-            meta = Label(text=f"{when} · {kindtxt} · seed {r['seed']} · {r['status']}",
-                         size_hint_y=None, height=dp(20), font_size="12sp", color=(0.55, 0.57, 0.64, 1),
-                         halign="left", shorten=True)
-            meta.bind(size=lambda w, s: setattr(w, "text_size", s))
-            btns = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
-            done = r["status"] == "done"
-            def add(text, cb, enabled=True):
-                b = Factory.Btn(text=text, disabled=not enabled)
-                b.bind(on_release=lambda *_: cb())
-                btns.add_widget(b)
-            add("Play", lambda i=r["id"]: self.toggle_play(i), done)
-            add("WAV", lambda i=r["id"]: self.save(i, "wav"), done)
-            add("MP3", lambda i=r["id"]: self.save(i, "mp3"), done)
-            if (r.get("kind") or "song") in ("song", "revoice"):
-                add("Re-voice", lambda i=r["id"]: self.revoice(i), done)
-            cid = (r.get("params") or {}).get("card_id")
-            if cid and self.engine.cards.get(cid):
-                add("Card", lambda c=cid: self.card_dialog(c))
-            add("Reuse", lambda r=r: self.reuse(r))
-            add("Delete", lambda i=r["id"]: self.delete(i))
-            for w in (title, meta, btns):
-                card.add_widget(w)
-            box.add_widget(card)
+            kindtxt = "talk" if talk else f"{r['duration']:.0f}s - {r['mode']}"
+            for text, kw in ((r["prompt"], dict(bold=True, font_size="14sp")),
+                             (f"{when}  -  {kindtxt}  -  {r['status']}", dict(font_size="11sp", color=(0.54, 0.56, 0.63, 1)))):
+                w = Label(text=text, size_hint_y=None, height=dp(22), halign="left", shorten=True, **kw)
+                w.bind(size=lambda x, sz: setattr(x, "text_size", sz))
+                tile.add_widget(w)
+            tile.bind(on_release=lambda *_a, i=r["id"]: self.select_song(i))
+            grid.add_widget(tile)
+        r = chosen
+        done = r["status"] == "done"
+        talk = (r.get("kind") or "song") == "talk"
+        self._panel_text(side, "SELECTED SONG", r["prompt"], f"seed {r['seed']}  -  {r['status']}")
+        acts = [("Save WAV", lambda i=r["id"]: self.save(i, "wav"), done), ("Save MP3", lambda i=r["id"]: self.save(i, "mp3"), done)]
+        if (r.get("kind") or "song") in ("song", "revoice"):
+            acts.append(("Re-voice", lambda i=r["id"]: self.revoice(i), done))
+        cid = (r.get("params") or {}).get("card_id")
+        if cid and self.engine.cards.get(cid):
+            acts.append(("Open its song card", lambda c=cid: self.card_dialog(c), True))
+        acts.append(("Reuse these settings", lambda r=r: self.reuse(r), True))
+        self._panel_actions(side, "DO SOMETHING WITH IT", acts)
+
+    def select_song(self, sid):
+        self.sel_song = sid
+        self.refresh_library()
+
+    def select_card(self, cid):
+        self.sel_card = cid
+        self.refresh_library()
 
     # ---- song cards (procedural songs kept on file for re-use, remix and extend) ----
     def set_lib_mode(self, mode):
         self.lib_mode = mode
         self.refresh_library()
 
-    def _cards_view(self, box):
-        from kivy.factory import Factory
+    def _cards_view(self, grid, side):
         from kivy.uix.label import Label
-        imp = Factory.Btn(text="Import a card file...")
-        imp.bind(on_release=lambda *_: self.pick_card_file())
-        box.add_widget(imp)
         cards = self.engine.cards.list()
         if not cards:
-            box.add_widget(Label(text="No cards yet. Every song made with the procedural engine keeps one here.",
-                                 size_hint_y=None, height=dp(50), text_size=(dp(320), None)))
-        from kivy.core.window import Window
-        from kivy.uix.gridlayout import GridLayout
-        cols = max(1, int((Window.width - dp(16)) // dp(230)))
-        grid = GridLayout(cols=cols, spacing=dp(12), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter("height"))
+            grid.add_widget(Label(text="No cards yet. Every song made with the procedural engine keeps one here.",
+                                  size_hint_y=None, height=dp(60), color=(0.54, 0.56, 0.63, 1)))
+            return
+        if self.sel_card not in {c.id for c in cards}:
+            self.sel_card = cards[0].id
         for c in cards:
             grid.add_widget(self._song_card(c))
-        box.add_widget(grid)
+        c = next(x for x in cards if x.id == self.sel_card)
+        self._panel_text(side, "SELECTED CARD", c.name, c.recipe.summary())
+        self._panel_actions(side, "DO SOMETHING WITH IT", [
+            ("Remix", lambda i=c.id: self.card_remix_dialog(i), True),
+            ("Extend with a new tune", lambda i=c.id: self.card_extend_dialog(i), True),
+            ("Export card file", lambda i=c.id: self.export_card(i), True),
+            ("Delete card", lambda i=c.id: self.delete_card(i), True)])
 
     ACCENTS = [(0.49, 0.61, 1, 1), (0.95, 0.55, 0.45, 1), (0.45, 0.8, 0.6, 1), (0.85, 0.7, 0.35, 1),
                (0.75, 0.55, 0.95, 1), (0.4, 0.78, 0.85, 1)]
@@ -1525,7 +1967,7 @@ class Root(BoxLayout):
         from kivy.uix.gridlayout import GridLayout
         r, st = c.recipe, c.recipe.style
         from ..backends.procedural import NOTE_NAMES
-        card = Factory.SongCard()
+        card = Factory.SongCard(height=dp(300))
         card.accent = self.ACCENTS[zlib.crc32(st["name"].encode()) % len(self.ACCENTS)]
 
         def lab(text, h, **kw):
@@ -1556,13 +1998,8 @@ class Root(BoxLayout):
         first = next((ln for sec in r.sections for ln in sec.lines if ln), "")
         card.add_widget(lab(f"\u201c{first}\u201d" if first else "no lyrics", 20, font_size="11sp", italic=True,
                             color=(0.7, 0.72, 0.8, 1), shorten=True))
-        row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(4))
-        for text, cb in (("Play", lambda i=c.id: self.render_card(i, play=True)), ("Remix", lambda i=c.id: self.card_remix_dialog(i)),
-                         ("Extend", lambda i=c.id: self.card_extend_dialog(i)), ("...", lambda i=c.id: self.card_dialog(i))):
-            b = Factory.Btn(text=text, height=dp(40))
-            b.bind(on_release=lambda *_a, cb=cb: cb())
-            row.add_widget(b)
-        card.add_widget(row)
+        card.selected = c.id == self.sel_card
+        card.bind(on_release=lambda *_a, i=c.id: self.select_card(i))
         return card
 
     def _track_job(self, job, msg, show=True):
@@ -1691,6 +2128,9 @@ class SudoMakeMusicApp(App):
         if platform == "android":
             os.environ.setdefault("SUDO_MAKE_MUSIC_HOME", self.user_data_dir)
         Builder.load_string(KV)
+        from kivy.core.window import Window
+        if platform in ("linux", "win", "macosx"):          # the layout is built for a desktop window
+            Window.minimum_width, Window.minimum_height = dp(900), dp(600)
         self.engine = Engine()
         self.root_widget = Root(self.engine)
         return self.root_widget

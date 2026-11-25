@@ -142,7 +142,50 @@ def run() -> tuple[bool, list[str]]:
                 raise RuntimeError("song cards (save, remix, extend) did not work")
             return f"6 s rendered, peak {peak:.2f}; song cards save, remix and extend"
 
+        def sample_cards():
+            """Render every built-in sample card in full, exactly as the Play button does."""
+            import time as _t
+            from .backends.procedural import ProceduralBackend
+            from .cards import CardStore
+            from .samples import SAMPLES, install_samples
+            from .settings import SettingsStore
+            store = CardStore(Path(home) / "sample-cards")
+            install_samples(store, SettingsStore(Path(home) / "sample-settings.json"))
+            cards = store.list()
+            if len(cards) != len(SAMPLES):
+                raise RuntimeError(f"expected {len(SAMPLES)} sample cards, found {len(cards)}")
+            t0, total = _t.time(), 0.0
+            for c in cards:
+                n = 0
+                for blk in ProceduralBackend().stream_recipe(c.recipe, None, lambda f: None, lambda: False):
+                    n += len(blk.audio)
+                    if not np.isfinite(blk.audio).all():
+                        raise RuntimeError(f"{c.name}: audio has invalid samples")
+                if abs(n / 44100 - c.recipe.duration) > 0.5:
+                    raise RuntimeError(f"{c.name}: rendered {n / 44100:.1f} s, expected {c.recipe.duration:.0f} s")
+                total += n / 44100
+            return f"{len(cards)} sample cards rendered in full ({total:.0f} s of audio in {_t.time() - t0:.1f} s)"
+
+        def playback():
+            """Informational: can this PC start (and stop) playing a sound? A build server has no speakers."""
+            import wave
+            from .player import AudioPlayer, PlayerError
+            f = Path(home) / "tone.wav"
+            with wave.open(str(f), "wb") as w:
+                w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
+                w.writeframes(np.zeros((22050, 2), dtype="<i2").tobytes())
+            p = AudioPlayer()
+            try:
+                p.play(f)
+                how = p.method
+                p.stop()
+                return f"started and stopped via {how}"
+            except PlayerError as e:
+                return f"no sound output here ({str(e)[:120]})"
+
         check("procedural music (beta)", procedural)
+        check("sample song cards (full render)", sample_cards)
+        check("sound player (informational)", playback, fatal=False)
         check("model list (Models tab)", model_list)
         check("safety scanner", scanner)
         check("mock song + mp3 export", song)
