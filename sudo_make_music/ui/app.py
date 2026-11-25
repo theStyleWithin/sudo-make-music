@@ -21,6 +21,33 @@ from ..command import COMMAND, allowed_input, is_command
 from ..engine import Engine
 from ..player import AudioPlayer, PlayerError
 
+SCALES = (("Small", 1.0), ("Medium", 1.25), ("Large", 1.5), ("Huge", 1.85))
+
+
+def screen_size() -> tuple:
+    """Pixel size of the main screen, (0, 0) if it cannot be found. Used to pick a readable default size."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+            return int(ctypes.windll.user32.GetSystemMetrics(0)), int(ctypes.windll.user32.GetSystemMetrics(1))
+        import subprocess
+        out = subprocess.run(["xrandr", "--current"], capture_output=True, text=True, timeout=2).stdout
+        m = re.search(r"current (\d+) x (\d+)", out)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    except Exception:
+        pass
+    return 0, 0
+
+
+def auto_scale(width: int) -> float:
+    return 2.0 if width >= 3200 else 1.6 if width >= 2500 else 1.4 if width >= 1900 else 1.15 if width >= 1500 else 1.0
+
+
 KV = r"""
 #:import dp kivy.metrics.dp
 #:import NoTransition kivy.uix.screenmanager.NoTransition
@@ -950,6 +977,7 @@ class Root(BoxLayout):
     playing = BooleanProperty(False)
     page = StringProperty("create")
     page_head = StringProperty("")
+    ui_scale = NumericProperty(0)               # chosen interface size (0 = automatic)
     more = BooleanProperty(False)               # "More options" fold on Create
     act_ghost = StringProperty("")              # the two buttons in the bottom-right action bar
     act_primary = StringProperty("")
@@ -982,9 +1010,11 @@ class Root(BoxLayout):
         self.sel_card = self.sel_song = ""
         self.page_head = self.HEADS["create"]
         from kivy.core.window import Window
-        Window.bind(on_resize=lambda *_: Clock.schedule_once(lambda dt: self._relayout(), 0.25))
+        self._resize_cb = lambda *_: Clock.schedule_once(lambda dt: self._relayout(), 0.25)
+        Window.bind(on_resize=self._resize_cb)
+        self.ui_scale = engine.store.value.ui_scale
         Clock.schedule_once(lambda dt: self._init_ui(), 0)
-        Clock.schedule_interval(self._tick, 0.5)
+        self._tick_ev = Clock.schedule_interval(self._tick, 0.5)
 
     # ---- setup / refresh -------------------------------------------------
     def _init_ui(self):
@@ -1614,6 +1644,19 @@ class Root(BoxLayout):
             self.refresh_store()
         self._sync_actions()
 
+    def dispose(self):
+        """Stop everything this window set going, before it is replaced (interface size change)."""
+        from kivy.core.window import Window
+        self._tick_ev.cancel()
+        Window.unbind(on_resize=self._resize_cb)
+        self.player.stop()
+
+    def set_ui_scale(self, value):
+        self.engine.store.value.ui_scale = float(value)
+        self.engine.store.save()
+        self.ui_scale = float(value)
+        Clock.schedule_once(lambda dt: App.get_running_app().rebuild(), 0)
+
     def _relayout(self):
         if self.page == "library":
             self.refresh_library()
@@ -2127,13 +2170,67 @@ class SudoMakeMusicApp(App):
     def build(self):
         if platform == "android":
             os.environ.setdefault("SUDO_MAKE_MUSIC_HOME", self.user_data_dir)
-        Builder.load_string(KV)
-        from kivy.core.window import Window
-        if platform in ("linux", "win", "macosx"):          # the layout is built for a desktop window
-            Window.minimum_width, Window.minimum_height = dp(900), dp(600)
         self.engine = Engine()
+        from kivy.config import Config
+        from kivy.metrics import Metrics
+        self._base_density = Metrics.density
+        sw, sh = screen_size() if platform in ("linux", "win", "macosx") else (0, 0)
+        self._screen = (sw, sh)
+        scale = self._effective_scale()
+        if sw and sh:                                   # open at a comfortable size on this screen
+            Config.set("graphics", "width", str(int(min(sw * 0.9, 1320 * scale))))
+            Config.set("graphics", "height", str(int(min(sh * 0.9, 840 * scale))))
+        from kivy.core.window import Window
+        if sw and sh:
+            Window.size = (int(min(sw * 0.9, 1320 * scale)), int(min(sh * 0.9, 840 * scale)))
+        self._apply_scale(scale)
+        Builder.load_string(KV)
+        Window.bind(on_key_down=self._on_key)
         self.root_widget = Root(self.engine)
         return self.root_widget
+
+    def _effective_scale(self) -> float:
+        v = self.engine.store.value.ui_scale
+        if v:
+            return float(v)
+        return auto_scale(self._screen[0]) if self._base_density <= 1.2 else 1.0
+
+    def _apply_scale(self, scale: float):
+        from kivy.core.window import Window
+        from kivy.metrics import Metrics
+        Metrics.density = self._base_density * scale
+        if platform in ("linux", "win", "macosx"):      # the layout is built for a desktop window
+            w, h = dp(900), dp(600)
+            if self._screen[0]:
+                w, h = min(w, int(self._screen[0] * 0.95)), min(h, int((self._screen[1] or 99999) * 0.9))
+            Window.minimum_width, Window.minimum_height = w, h
+
+    def rebuild(self):
+        """Apply a new interface size right away: replace the window's content, keeping the same page."""
+        from kivy.core.window import Window
+        old = self.root_widget
+        page = old.page
+        old.dispose()
+        Window.remove_widget(old)
+        self._apply_scale(self._effective_scale())
+        new = Root(self.engine)
+        self.root_widget = self.root = new
+        Window.add_widget(new)
+        Clock.schedule_once(lambda dt: new.show(page), 0.1)
+
+    def _on_key(self, window, key, scancode, codepoint, modifiers):
+        if "ctrl" not in modifiers:
+            return False
+        step = 1 if (codepoint in ("+", "=") or key in (61, 43, 270)) else -1 if (codepoint == "-" or key in (45, 269)) else 0
+        if not step:
+            return False
+        values = [v for _n, v in SCALES]
+        cur = self._effective_scale()
+        i = min(range(len(values)), key=lambda k: abs(values[k] - cur))
+        j = max(0, min(len(values) - 1, i + step))
+        if values[j] != self.engine.store.value.ui_scale:
+            self.root_widget.set_ui_scale(values[j])
+        return True
 
     def on_stop(self):
         self.root_widget.player.stop()

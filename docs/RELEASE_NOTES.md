@@ -1,7 +1,10 @@
-# sudo make music 1.0.5
+# sudo make music 1.0.6
 
 Offline AI music generation for mid-range PCs (built for ~6GB VRAM / 16GB RAM). No cloud, no content filter,
 every model is a local, swappable folder.
+
+## What is new in 1.0.6
+- **Bigger, easier-to-read interface.** New **Interface size** setting (Settings > top): Auto, Small, Medium, Large, Huge. It applies straight away, no restart. On big screens the app now picks a larger size by itself. You can also hold Ctrl and press + or - anywhere in the app.
 
 ## What is new in 1.0.5
 - **New look.** The whole app has been redesigned to be calmer and easier to follow: a slim menu down the left (Create, Voices, Library, Models, Settings), a clear title on every page, and one fixed bar along the bottom where the main button always sits in the bottom-right corner (Generate, Play, Download, Save...). Everything is lined up on one grid with one accent colour.
